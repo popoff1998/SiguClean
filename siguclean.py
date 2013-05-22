@@ -19,15 +19,18 @@ HOMEMAIL = 'NEWMAIL/MAIL'
 sessionId = ""
 fromDate = ""
 toDate = ""
+global userList
 
 #MOUNTS = ({'fs':'homenfs','label':'HOMESNFS','val':''},
 #          {'fs':'homemail','label':'NEWMAIL/MAIL','val':''})  
 
 MOUNTS = ({'fs':'homenfs','label':'INSTALACIONES','val':''},
-          {'fs':'homemail','label':'NEWMAIL/MAIL','val':''})  
+          {'fs':'homemail','label':'NEWMAIL/MAIL','val':''},  
+          {'fs':'perfiles','label':'PERFILES$','val':''},  
+          {'fs':'homecifs','label':'HOMESCIF$','val':''})
 
 import os
-
+import config
 
 def getListByDate(toDate , fromDate='1900-01-01'):
     Q_BETWEEN_DATES = 'FCADUCIDAD  BETWEEN to_date(\''+ fromDate +\
@@ -38,6 +41,7 @@ def getListByDate(toDate , fromDate='1900-01-01'):
     cursor = oracleCon.cursor()
     cursor.execute(query)     
     userList = cursor.fetchall()
+    config.status.userList = True
     return userList
 
 def CheckEnvironment():
@@ -84,11 +88,12 @@ def CheckConnections():
         ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, 0)
         ldapCon = ldap.initialize(LDAP_SERVER)
         ldapCon.simple_bind_s(BIND_DN, WINDOWS_PASS)
+        config.status.ldapCon = True
         print "CORRECTO"
     except ldap.LDAPError, e:
         print "ERROR"
         print e
-        exit
+        config.status.ldapCon = False
     #Oracle
     global ORACLE_PASS
     ORACLE_PASS = raw_input('     Introduzca la clave de oracle (sigu):')
@@ -96,10 +101,11 @@ def CheckConnections():
     try:
         global oracleCon
         oracleCon = cx_Oracle.connect('sigu/'+ORACLE_PASS+'@'+ORACLE_SERVER)
+        config.status.oracleCon = True
         print "CORRECTO"
     except:
         print "ERROR"
-        exit
+        config.status.oracleCon = False
         
     return ldapCon, oracleCon
 
@@ -110,14 +116,13 @@ def get_mount_point(algo):
             for line in ifp:
                 fields= line.rstrip('\n').split()
                 if algo in fields[0]: 
-                    return fields[1]
+                     return fields[1]
     except EnvironmentError:
         pass
     return None # explicit
     
 def CheckMounts():
     "Comprueba que los puntos de montaje están accesibles"
-
     print "  Comprobando el acceso a los Datos"
     salgo = False
     for var in MOUNTS:
@@ -125,7 +130,10 @@ def CheckMounts():
         var['val'] = get_mount_point(var['label'])
         if var['val'] != None:
             print var['val']
+            print("status.%s = True" % (var['fs']))
+            exec("config.status.%s = True" % (var['fs']))
         else:
+            exec("config.status.%s = False" % (var['fs']))
             print "NO ACCESIBLE"
             salgo = True
     if salgo:
@@ -170,31 +178,49 @@ def pager(iterable, page_size):
     fillvalue = object()
     for group in itertools.izip_longest(fillvalue=fillvalue, *args):
         yield (elem for elem in group if elem is not fillvalue)  
+
+def imprimeUsuarios(userList):        
+    my_pager = pager(userList,20)
+    for page in my_pager:
+        for i in page:
+            print i
+        tecla = raw_input("----- Pulse intro para continuar (q para salir) ----------")
+        if tecla == 'q':
+            break       
+
+import cmd        
+class shell(cmd.Cmd):
+    def do_check(self, line):
+        CheckEnvironment()
         
+    def do_getusers(self, line):
+        if fromDate != '':
+            userList = getListByDate(toDate,fromDate)
+        else:
+            userList = getListByDate(toDate)
+        print "\nEl numero de usuarios a borrar es ",len(userList)
         
-        
-           
+    def do_params(self, line):
+        EnterParameters()
     
-    
+    def do_printusers(self, line):
+        imprimeUsuarios(userList) 
+        
+    def do_quit(self, line):
+        return True
+
+    def do_status(self,line):
+        config.status.show()
+        
+    def __init__(self):
+        cmd.Cmd.__init__(self)
 """
 Programa principal
 """
-CheckEnvironment()
-EnterParameters()
-if fromDate != '':
-    userList = getListByDate(toDate,fromDate)
-else:
-    userList = getListByDate(toDate)
-    
-print "\nEl numero de usuarios a borrar es ",len(userList)
+shell().cmdloop()
 
-my_pager = pager(userList,20)
-for page in my_pager:
-    for i in page:
-        print i
-    tecla = raw_input("----- Pulse intro para continuar (q para salir) ----------")
-    if tecla == 'q':
-        break
+
+
 
     
     
