@@ -19,7 +19,6 @@ HOMEMAIL = 'NEWMAIL/MAIL'
 sessionId = ""
 fromDate = ""
 toDate = ""
-global userList
 
 #MOUNTS = ({'fs':'homenfs','label':'HOMESNFS','val':''},
 #          {'fs':'homemail','label':'NEWMAIL/MAIL','val':''})  
@@ -35,18 +34,18 @@ import config
 
 def dnFromUser(user):
     filtro = "(&(CN="+user+")(!(objectClass=contact)))"  
-    print "User: ",user
-    print "Filtro: ",filtro
-    result_id = ldapCon.search(USER_BASE,
+    try:
+        result_id = ldapCon.search(USER_BASE,
                             ldap.SCOPE_SUBTREE,
                             filtro,
                             ["dn"],
                             1)
-    print "DESPUES DE RESULT"
-                            
-    none,tupla = ldapCon.result(result_id,0)
-    dn,none = tupla[0]
-    return dn
+        result_type,tupla = ldapCon.result(result_id,0)
+        dn,none = tupla[0]
+        status = True
+    except:
+        status = False
+    return status,dn,result_type
                 
 class user(object):
     cuenta = None    
@@ -80,7 +79,9 @@ def getListByDate(toDate , fromDate='1900-01-01'):
     if DEBUG: print "getListByDate Query:",query
     cursor = oracleCon.cursor()
     cursor.execute(query)     
-    userList = cursor.fetchall()
+    tmpList = cursor.fetchall()
+    #Convertimos para quitar tuplas
+    userList = [x[0] for x in tmpList]        
     config.status.userList = True
     return userList
 
@@ -128,6 +129,7 @@ def CheckConnections():
     try:
         global ldapCon
         ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, 0)
+        ldap.set_option(ldap.OPT_REFERRALS,0)
         ldapCon = ldap.initialize(LDAP_SERVER)
         ldapCon.simple_bind_s(BIND_DN, WINDOWS_PASS)
         config.status.ldapCon = True
@@ -231,7 +233,7 @@ def pager(iterable, page_size):
     for group in itertools.izip_longest(fillvalue=fillvalue, *args):
         yield (elem for elem in group if elem is not fillvalue)  
 
-def imprimeUsuarios(userList):        
+def imprime(userList):        
     my_pager = pager(userList,20)
     for page in my_pager:
         for i in page:
@@ -246,6 +248,7 @@ class shell(cmd.Cmd):
         CheckEnvironment()
         
     def do_getusers(self, line):
+        global userList
         if fromDate != '':
             userList = getListByDate(toDate,fromDate)
         else:
@@ -256,7 +259,7 @@ class shell(cmd.Cmd):
         EnterParameters()
     
     def do_printusers(self, line):
-        imprimeUsuarios(userList) 
+        imprime(userList) 
         
     def do_quit(self, line):
         return True
@@ -266,8 +269,20 @@ class shell(cmd.Cmd):
         print "El estado OK es ",config.status.ok()
     
     def do_dnfromuser(self,line):
-        print dnFromUser(line)
+        status,dn,result_type = dnFromUser(line)
+        if status:
+            print dn
+        else:
+            print "ERROR; resultype:",result_type,"Dn: ",dn
         
+    def do_printdns(self,line):
+        for user in userList:
+            status,dn,result_type = dnFromUser(user)
+            if status:
+                print dn
+            else:
+                print "ERROR; resultype:",result_type,"Dn: ",dn
+
     def __init__(self):
         cmd.Cmd.__init__(self)
 """
