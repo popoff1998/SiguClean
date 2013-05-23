@@ -24,14 +24,54 @@ global userList
 #MOUNTS = ({'fs':'homenfs','label':'HOMESNFS','val':''},
 #          {'fs':'homemail','label':'NEWMAIL/MAIL','val':''})  
 
-MOUNTS = ({'fs':'homenfs','label':'INSTALACIONES','val':''},
-          {'fs':'homemail','label':'NEWMAIL/MAIL','val':''},  
-          {'fs':'perfiles','label':'PERFILES$','val':''},  
-          {'fs':'homecifs','label':'HOMESCIF$','val':''})
+MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'INSTALACIONES','val':''},
+          {'account':'MAIL','fs':'homemail','label':'NEWMAIL/MAIL','val':''},  
+          {'account':'WINDOWS','fs':'perfiles','label':'PERFILES$','val':''},  
+          {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF$','val':''})
 
-import os
+import os,sys
+from stat import *
 import config
 
+def dnFromUser(user):
+    filtro = "(&(CN="+user+")(!(objectClass=contact)))"  
+    print "User: ",user
+    print "Filtro: ",filtro
+    result_id = ldapCon.search(USER_BASE,
+                            ldap.SCOPE_SUBTREE,
+                            filtro,
+                            ["dn"],
+                            1)
+    print "DESPUES DE RESULT"
+                            
+    none,tupla = ldapCon.result(result_id,0)
+    dn,none = tupla[0]
+    return dn
+                
+class user(object):
+    cuenta = None    
+    dn = None
+    storage = {}
+    
+    def __init__(self,cuenta):
+        self.cuenta = cuenta
+
+        for c in userCuentas(cuenta):
+            #relleno el diccionario storage
+            for m in MOUNTS:
+                if c == m['account']:
+                    sto_path = m['val'] + '/' + cuenta
+                    sto_key = m['fs']
+                    #Trato el caso especial de mail
+                    if c == 'MAIL':
+                        if os.path.islink(sto_path):
+                            self.storage['MAILLINK'] = sto_path
+                            sto_path = os.path.realpath(sto_path)
+                    self.storage[sto_key] = sto_path
+            #Hallo el dn en el caso de cuentas windows
+                                 
+                
+    
 def getListByDate(toDate , fromDate='1900-01-01'):
     Q_BETWEEN_DATES = 'FCADUCIDAD  BETWEEN to_date(\''+ fromDate +\
                        '\',\'yyyy-mm-dd\') AND to_date(\''+ toDate +\
@@ -47,11 +87,12 @@ def getListByDate(toDate , fromDate='1900-01-01'):
 def CheckEnvironment():
     print "PASO1: Comprobando el entorno de ejecucion ..."
     CheckModules()
-    con = CheckConnections()
+    CheckConnections()
     CheckMounts()
     
     
 def CheckModules():
+    "Comprueba que son importables los módulos ldap y cx_Oracle"
     print "  Comprobando modulos necesarios"
 
     #python_ldap
@@ -77,6 +118,7 @@ def CheckModules():
         exit
     
 def CheckConnections():
+    "Establece las conexiones a ldap y oracle"
     print "  Comprobando conexiones"
 
     #LDAP
@@ -106,8 +148,6 @@ def CheckConnections():
     except:
         print "ERROR"
         config.status.oracleCon = False
-        
-    return ldapCon, oracleCon
 
 def get_mount_point(algo):
     "Devuelve el punto de montaje que contiene algo en el export"
@@ -130,7 +170,6 @@ def CheckMounts():
         var['val'] = get_mount_point(var['label'])
         if var['val'] != None:
             print var['val']
-            print("status.%s = True" % (var['fs']))
             exec("config.status.%s = True" % (var['fs']))
         else:
             exec("config.status.%s = False" % (var['fs']))
@@ -138,6 +177,18 @@ def CheckMounts():
             salgo = True
     if salgo:
         exit
+        
+def userCuentas(user):
+    "Devuelve una tupla con las cuentas que tiene el usuario"
+    
+def checkUser(user):
+    """ Comprueba que el usuario cumple todas las condiciones para ser borrado
+        Las condiciones son:
+            a) Accesibilidad a todos los storages asociados con sus cuentas
+            b) Accesibilidad al objeto LDAP de AD si tiene cuenta AD
+     """       
+    for cuenta in userCuentas(user):
+        checkStorage(cuenta)
 
 def inputParameter(param,text,mandatory):
     "Lee un parametro admitiendo que la tecla intro ponga el anterior"
@@ -168,6 +219,7 @@ def EnterParameters():
         
         sal = raw_input('\nSon Correctos (S/n): ')
         if sal == 'S':
+            config.status.sessionId = True
             return
         else:
             continue
@@ -211,6 +263,10 @@ class shell(cmd.Cmd):
 
     def do_status(self,line):
         config.status.show()
+        print "El estado OK es ",config.status.ok()
+    
+    def do_dnfromuser(self,line):
+        print dnFromUser(line)
         
     def __init__(self):
         cmd.Cmd.__init__(self)
