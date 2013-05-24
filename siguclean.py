@@ -12,6 +12,8 @@ BIND_DN = "Administrador@uco.es"
 USER_BASE = "dc=uco,dc=es"
 ORACLE_SERVER='ibmblade47/av10g'
 
+TARDIR='/tmp'
+
 HOMESNFS = 'INSTALA1CIONES'
 HOMEMAIL = 'NEWMAIL/MAIL'
 
@@ -23,13 +25,15 @@ toDate = ""
 #MOUNTS = ({'fs':'homenfs','label':'HOMESNFS','val':''},
 #          {'fs':'homemail','label':'NEWMAIL/MAIL','val':''})  
 
-MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'INSTALACIONES','val':''},
-          {'account':'MAIL','fs':'homemail','label':'NEWMAIL/MAIL','val':''},  
-          {'account':'WINDOWS','fs':'perfiles','label':'PERFILES$','val':''},  
-          {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF$','val':''})
+MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'INSTALACIONES','type':'mandatory','val':''},
+          {'account':'MAIL','fs':'homemail','label':'INSTALACIONES','type':'mandatory','val':''},  
+          {'account':'WINDOWS','fs':'perfiles','label':'PERFILES$','type':'optional','val':''},  
+          {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','type':'mandatory','val':''})
 
 import os,sys
 from stat import *
+import tarfile
+from pprint import pprint
 import config
 
 def dnFromUser(user):
@@ -48,13 +52,22 @@ def dnFromUser(user):
     return status,dn,result_type
                 
 class user(object):
-    cuenta = None    
-    dn = None
-    storage = {}
-    
+    def check(self):
+        """Metodo que chequea los storages mandatory del usuario
+        Asumo que la DN está bien porque acabo de buscarla."""
+        status = True
+        for key in self.storage.keys():
+            if os.path.exists(self.storage[key]) is False:
+                exec("self.status.%s = False" % (key))
+                status = False
+            else:
+                exec("self.status.%s = True" % (key))
+        
     def __init__(self,cuenta):
+        self.dn = None
+        self.storage = {}
         self.cuenta = cuenta
-
+        self.status = config.Status([],[])
         for c in userCuentas(cuenta):
             #relleno el diccionario storage
             for m in MOUNTS:
@@ -65,12 +78,37 @@ class user(object):
                     if c == 'MAIL':
                         if os.path.islink(sto_path):
                             self.storage['MAILLINK'] = sto_path
+                            self.status.add('MAILLINK',False,'optional')
                             sto_path = os.path.realpath(sto_path)
+                    #Caso especial de WINDOWS (calcular dn)
+                    if c == 'WINDOWS':
+                        status,dn,result_type = dnFromUser(cuenta)
+                        if status:
+                            self.dn = dn
+                        else:
+                            self.dn = False                       
                     self.storage[sto_key] = sto_path
-            #Hallo el dn en el caso de cuentas windows
-                                 
-                
+                    self.status.add(sto_key,False,m['type'])
+                    
+    def archive(self):
+        "Metodo que archiva todos los storages del usuario"
+        if os.path.isdir(TARDIR) is False:
+            print "ERROR: No existe el directorio para TARS"
+            exit
     
+        rootpath = TARDIR + '/' + self.cuenta
+        if os.path.isdir(rootpath) is False:
+            os.mkdir(rootpath,0777)
+    
+        for key in self.storage.iterkeys():
+            #Vuelvo a comprobar aqui que es accesible
+            if os.path.exists(self.storage[key]) is False:
+                continue
+            path = rootpath + '/' + self.cuenta + '_' + key + '_' + sessionId + ".tar"
+            print "Archiving ",self.storage[key]," in ",path," ... "
+            tar = tarfile.open(path,"w")
+            tar.add(self.storage[key])
+                
 def getListByDate(toDate , fromDate='1900-01-01'):
     Q_BETWEEN_DATES = 'FCADUCIDAD  BETWEEN to_date(\''+ fromDate +\
                        '\',\'yyyy-mm-dd\') AND to_date(\''+ toDate +\
@@ -182,6 +220,7 @@ def CheckMounts():
         
 def userCuentas(user):
     "Devuelve una tupla con las cuentas que tiene el usuario"
+    return ('WINDOWS','LINUX','MAIL') #dummy return
     
 def checkUser(user):
     """ Comprueba que el usuario cumple todas las condiciones para ser borrado
@@ -282,7 +321,21 @@ class shell(cmd.Cmd):
                 print dn
             else:
                 print "ERROR; resultype:",result_type,"Dn: ",dn
+    
+    def do_showuser(self,line):
+        usuario = user(line)
+        pprint(vars(usuario))
 
+    def do_checkuser(self,line):
+        usuario = user(line)
+        usuario.check()
+        usuario.status.show()
+        print "El estado del usuario para borrar es: ",usuario.status.ok()
+        
+    def do_archive(self,line):
+        usuario = user(line)
+        usuario.archive()
+        
     def __init__(self):
         cmd.Cmd.__init__(self)
 """
