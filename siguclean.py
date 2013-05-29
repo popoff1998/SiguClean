@@ -4,15 +4,20 @@ Created on Mon May 20 09:09:42 2013
 
 @author: tonin
 """
-Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
+#from __future__ import print_function
+
+#Defines
 DEBUG = True
+VERBOSE = 1
+TARDIR='/tmp'
+
 #VARIABLES DE CONFIGURACION
+Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
 LDAP_SERVER = "ldaps://sunsrv.uco.es"
 BIND_DN = "Administrador@uco.es"
 USER_BASE = "dc=uco,dc=es"
 ORACLE_SERVER='ibmblade47/av10g'
 
-TARDIR='/tmp'
 
 HOMESNFS = 'INSTALA1CIONES'
 HOMEMAIL = 'NEWMAIL/MAIL'
@@ -39,6 +44,16 @@ import config
 
 state = Enum('NA','COPY','FAIL','SKIP','ROLLBACK')
 
+def Print(level,*args,**kwargs):
+    if VERBOSE >= level:
+        if kwargs != {}:
+            trail = kwargs['end']
+        else:
+            trail = '\n'
+        for string in args:
+            print(string),
+        print(trail),
+        
 def dnFromUser(user):
     filtro = "(&(CN="+user+")(!(objectClass=contact)))"  
     try:
@@ -66,18 +81,18 @@ class Storage(object):
         self.tarsize = 0
         
     def display(self):
-        print self.key,"\t = ",self.path,"\t Accesible: ",self.accesible,"\t Estado: ",self.state
+        Print(1,self.key,"\t = ",self.path,"\t Accesible: ",self.accesible,"\t Estado: ",self.state)
 
     def archive(self,rootpath):
             #Vuelvo a comprobar aqui que es accesible
             if os.path.exists(self.path) is False:
                 #Aquí vendra el manejo del error                
                 return False
-            path = rootpath + '/' + self.parent.cuenta + '_' + self.key + '_' + sessionId + ".tar"
-            print "Archiving ",self.key," in ",self.path," ... "
-            tar = tarfile.open(path,"w")
+            tarpath = rootpath + '/' + self.parent.cuenta + '_' + self.key + '_' + sessionId + ".tar"
+            Print(1,"Archiving ",self.key," from ",self.path," in ",tarpath," ... ")
+            tar = tarfile.open(tarpath,"w")
             tar.add(self.path)
-            self.tarsize = os.path.getsize(path)
+            self.tarsize = os.path.getsize(tarpath)
                 
 class user(object):
     def check(self):
@@ -86,11 +101,9 @@ class user(object):
         status = True
         for storage in self.storage:
             if os.path.exists(storage.path) is False:
-                #exec("self.status.%s = False" % (key))
                 storage.accesible = False
                 status = False
             else:
-                #exec("self.status.%s = True" % (key))
                 storage.accesible = True
         return status
         
@@ -98,7 +111,6 @@ class user(object):
         self.dn = None
         self.cuenta = cuenta
         self.storage = []
-        #self.status = config.Status([],[])
         for c in userCuentas(cuenta):
             #relleno el diccionario storage
             for m in MOUNTS:
@@ -110,8 +122,6 @@ class user(object):
                         if os.path.islink(sto_path):
                             storage = Storage('MAILLINK',sto_path,False,self)
                             self.storage.append(storage)
-                            #self.storage['MAILLINK'] = sto_path
-                            #self.status.add('MAILLINK',False,)
                             sto_path = os.path.realpath(sto_path)
                     #Caso especial de WINDOWS (calcular dn)
                     if c == 'WINDOWS':
@@ -122,8 +132,6 @@ class user(object):
                             self.dn = False                       
                     storage = Storage(sto_key,sto_path,m['mandatory'],self)
                     self.storage.append(storage)
-                    #self.storage[sto_key] = sto_path
-                    #self.status.add(sto_key,False,m['type'])
 
     def showstorage(self):
         for storage in self.storage:
@@ -137,7 +145,7 @@ class user(object):
         #pendiente de controlar errores y mandatory
         "Metodo que archiva todos los storages del usuario"
         if os.path.isdir(TARDIR) is False:
-            print "ERROR: No existe el directorio para TARS"
+            Print(0,"ERROR: No existe el directorio para TARS")
             exit
     
         rootpath = TARDIR + '/' + self.cuenta
@@ -146,16 +154,15 @@ class user(object):
     
         for storage in self.storage:
             storage.archive(rootpath)
-            print storage.tarsize
             self.tarsizes = self.tarsizes + storage.tarsize
-        print "El tamaño de los tars es: ",self.tarsizes
+        Print(1,"El tamaño de los tars es: ",self.tarsizes)
                 
 def getListByDate(toDate , fromDate='1900-01-01'):
     Q_BETWEEN_DATES = 'FCADUCIDAD  BETWEEN to_date(\''+ fromDate +\
                        '\',\'yyyy-mm-dd\') AND to_date(\''+ toDate +\
                        '\',\'yyyy-mm-dd\')'
     query = Q_GET_BORRABLES + ' AND ' + Q_BETWEEN_DATES
-    if DEBUG: print "getListByDate Query:",query
+    if DEBUG: print("getListByDate Query:",query)
     cursor = oracleCon.cursor()
     cursor.execute(query)     
     tmpList = cursor.fetchall()
@@ -165,7 +172,7 @@ def getListByDate(toDate , fromDate='1900-01-01'):
     return userList
 
 def CheckEnvironment():
-    print "PASO1: Comprobando el entorno de ejecucion ..."
+    Print(1,"PASO1: Comprobando el entorno de ejecucion ...")
     CheckModules()
     CheckConnections()
     CheckMounts()
@@ -173,38 +180,36 @@ def CheckEnvironment():
     
 def CheckModules():
     "Comprueba que son importables los módulos ldap y cx_Oracle"
-    print "  Comprobando modulos necesarios"
+    Print(1,"  Comprobando modulos necesarios")
 
     #python_ldap
-    print('     comprobando modulo conexion a ldap  ... '),    
+    Print(1,'     comprobando modulo conexion a ldap  ... ',end=' ')    
     try:
         global ldap
         import ldap
-        print "CORRECTO"
+        Print(1,"CORRECTO")
     except:
-        print "ERROR"
-        print "No existe el modulo python-ldap, instalelo"
+        print(0,"ERROR: No existe el modulo python-ldap, instalelo")
         exit
 
     #cx_Oracle
-    print('     comprobando modulo conexion a Oracle ... '),    
+    Print(1,'     comprobando modulo conexion a Oracle ... ',end='')    
     try:
         global cx_Oracle        
         import cx_Oracle
-        print "CORRECTO"
+        Print(1,"CORRECTO")
     except:
-        print "ERROR"
-        print "No existe el modulo cx_Oracle, instalelo"
+        print('ERROR: No existe el modulo cx_Oracle, instalelo')
         exit
     
 def CheckConnections():
     "Establece las conexiones a ldap y oracle"
-    print "  Comprobando conexiones"
+    Print(1,"  Comprobando conexiones")
 
     #LDAP
     global WINDOWS_PASS
     WINDOWS_PASS = raw_input('     Introduzca la clave de windows (administrador):')
-    print('     comprobando conexion a ldap ... '),
+    Print(1,'     comprobando conexion a ldap ... ',end='')
     try:
         global ldapCon
         ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, 0)
@@ -212,22 +217,22 @@ def CheckConnections():
         ldapCon = ldap.initialize(LDAP_SERVER)
         ldapCon.simple_bind_s(BIND_DN, WINDOWS_PASS)
         config.status.ldapCon = True
-        print "CORRECTO"
+        Print(1,"CORRECTO")
     except ldap.LDAPError, e:
-        print "ERROR"
-        print e
+        Print(1,"ERROR")
+        Print(e)
         config.status.ldapCon = False
     #Oracle
     global ORACLE_PASS
     ORACLE_PASS = raw_input('     Introduzca la clave de oracle (sigu):')
-    print('     comprobando conexion a oracle ... '),
+    Print(1,'     comprobando conexion a oracle ... ',end='')
     try:
         global oracleCon
         oracleCon = cx_Oracle.connect('sigu/'+ORACLE_PASS+'@'+ORACLE_SERVER)
         config.status.oracleCon = True
-        print "CORRECTO"
+        Print(1,"CORRECTO")
     except:
-        print "ERROR"
+        Print(1,"ERROR")
         config.status.oracleCon = False
 
 def get_mount_point(algo):
@@ -244,17 +249,17 @@ def get_mount_point(algo):
     
 def CheckMounts():
     "Comprueba que los puntos de montaje están accesibles"
-    print "  Comprobando el acceso a los Datos"
+    Print(1,"  Comprobando el acceso a los Datos")
     salgo = False
     for var in MOUNTS:
-        print('     comprobando '+var['fs']+' ...'),
+        Print(1,'     comprobando '+var['fs']+' ...',end='')
         var['val'] = get_mount_point(var['label'])
         if var['val'] != None:
-            print var['val']
+            Print(1,var['val'])
             exec("config.status.%s = True" % (var['fs']))
         else:
             exec("config.status.%s = False" % (var['fs']))
-            print "NO ACCESIBLE"
+            Print(1,"NO ACCESIBLE")
             salgo = True
     if salgo:
         exit
@@ -290,14 +295,14 @@ def EnterParameters():
     "Lee por teclado los parametros de ejecucion"
     while True:
         global sessionId,fromDate,toDate
-        print "PASO2: Parametros de la sesion ('c' para borrar)"
+        Print(1,"PASO2: Parametros de la sesion ('c' para borrar)")
         sessionId = inputParameter(sessionId,"Identificador de sesion: ",True)      
         fromDate = inputParameter(fromDate,"Fecha desde (yyyy-mm-dd): ",False)
         toDate = inputParameter(toDate,"Fecha hasta (yyyy-mm-dd): ",True)
         
-        print '\nSessionId = ['+sessionId+']'
-        print 'fromDate = ['+fromDate+']'
-        print 'toDate = ['+toDate+']'
+        Print(1,'\nSessionId = ['+sessionId+']')
+        Print(1,'fromDate = ['+fromDate+']')
+        Print(1,'toDate = ['+toDate+']')
         
         sal = raw_input('\nSon Correctos (S/n): ')
         if sal == 'S':
@@ -317,7 +322,7 @@ def imprime(userList):
     my_pager = pager(userList,20)
     for page in my_pager:
         for i in page:
-            print i
+            Print(1,i)
         tecla = raw_input("----- Pulse intro para continuar (q para salir) ----------")
         if tecla == 'q':
             break       
@@ -333,7 +338,7 @@ class shell(cmd.Cmd):
             userList = getListByDate(toDate,fromDate)
         else:
             userList = getListByDate(toDate)
-        print "\nEl numero de usuarios a borrar es ",len(userList)
+        Print(1,"\nEl numero de usuarios a borrar es ",len(userList))
         
     def do_params(self, line):
         EnterParameters()
@@ -346,22 +351,22 @@ class shell(cmd.Cmd):
 
     def do_status(self,line):
         config.status.show()
-        print "El estado OK es ",config.status.ok()
+        Print(1,"El estado OK es ",config.status.ok())
     
     def do_dnfromuser(self,line):
         status,dn,result_type = dnFromUser(line)
         if status:
-            print dn
+            Print(1,dn)
         else:
-            print "ERROR; resultype:",result_type,"Dn: ",dn
+            Print(1,"ERROR; resultype:",result_type,"Dn: ",dn)
         
     def do_printdns(self,line):
         for user in userList:
             status,dn,result_type = dnFromUser(user)
             if status:
-                print dn
+                Print(1,dn)
             else:
-                print "ERROR; resultype:",result_type,"Dn: ",dn
+                Print(1,"ERROR; resultype:",result_type,"Dn: ",dn)
     
     def do_showuser(self,line):
         usuario = user(line)
@@ -371,7 +376,7 @@ class shell(cmd.Cmd):
         usuario = user(line)
         status = usuario.check()
         usuario.showstorage()
-        print "El estado del usuario para borrar es: ",status
+        Print(1,"El estado del usuario para borrar es: ",status)
         
     def do_archive(self,line):
         usuario = user(line)
