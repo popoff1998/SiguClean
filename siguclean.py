@@ -25,16 +25,19 @@ toDate = ""
 #MOUNTS = ({'fs':'homenfs','label':'HOMESNFS','val':''},
 #          {'fs':'homemail','label':'NEWMAIL/MAIL','val':''})  
 
-MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'INSTALACIONES','type':'mandatory','val':''},
-          {'account':'MAIL','fs':'homemail','label':'INSTALACIONES','type':'mandatory','val':''},  
-          {'account':'WINDOWS','fs':'perfiles','label':'PERFILES$','type':'optional','val':''},  
-          {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','type':'mandatory','val':''})
+MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'INSTALACIONES','mandatory':True,'val':''},
+          {'account':'MAIL','fs':'homemail','label':'INSTALACIONES','mandatory':False,'val':''},  
+          {'account':'WINDOWS','fs':'perfiles','label':'PERFILES$','mandatory':False,'val':''},  
+          {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})
 
 import os,sys
 from stat import *
+from enum import Enum
 import tarfile
 from pprint import pprint
 import config
+
+state = Enum('NA','COPY','FAIL','SKIP','ROLLBACK')
 
 def dnFromUser(user):
     filtro = "(&(CN="+user+")(!(objectClass=contact)))"  
@@ -50,24 +53,52 @@ def dnFromUser(user):
     except:
         status = False
     return status,dn,result_type
+    
+class Storage(object):
+    global state
+    def __init__(self,key,path,mandatory,parent):
+        self.key = key
+        self.path = path
+        self.accesible = None
+        self.mandatory = mandatory        
+        self.state = state.NA
+        self.parent = parent
+        self.tarsize = 0
+        
+    def display(self):
+        print self.key,"\t = ",self.path,"\t Accesible: ",self.accesible,"\t Estado: ",self.state
+
+    def archive(self,rootpath):
+            #Vuelvo a comprobar aqui que es accesible
+            if os.path.exists(self.path) is False:
+                #Aquí vendra el manejo del error                
+                return False
+            path = rootpath + '/' + self.parent.cuenta + '_' + self.key + '_' + sessionId + ".tar"
+            print "Archiving ",self.key," in ",self.path," ... "
+            tar = tarfile.open(path,"w")
+            tar.add(self.path)
+            self.tarsize = os.path.getsize(path)
                 
 class user(object):
     def check(self):
         """Metodo que chequea los storages mandatory del usuario
         Asumo que la DN está bien porque acabo de buscarla."""
         status = True
-        for key in self.storage.keys():
-            if os.path.exists(self.storage[key]) is False:
-                exec("self.status.%s = False" % (key))
+        for storage in self.storage:
+            if os.path.exists(storage.path) is False:
+                #exec("self.status.%s = False" % (key))
+                storage.accesible = False
                 status = False
             else:
-                exec("self.status.%s = True" % (key))
+                #exec("self.status.%s = True" % (key))
+                storage.accesible = True
+        return status
         
     def __init__(self,cuenta):
         self.dn = None
-        self.storage = {}
         self.cuenta = cuenta
-        self.status = config.Status([],[])
+        self.storage = []
+        #self.status = config.Status([],[])
         for c in userCuentas(cuenta):
             #relleno el diccionario storage
             for m in MOUNTS:
@@ -77,8 +108,10 @@ class user(object):
                     #Trato el caso especial de mail
                     if c == 'MAIL':
                         if os.path.islink(sto_path):
-                            self.storage['MAILLINK'] = sto_path
-                            self.status.add('MAILLINK',False,'optional')
+                            storage = Storage('MAILLINK',sto_path,False,self)
+                            self.storage.append(storage)
+                            #self.storage['MAILLINK'] = sto_path
+                            #self.status.add('MAILLINK',False,)
                             sto_path = os.path.realpath(sto_path)
                     #Caso especial de WINDOWS (calcular dn)
                     if c == 'WINDOWS':
@@ -87,10 +120,21 @@ class user(object):
                             self.dn = dn
                         else:
                             self.dn = False                       
-                    self.storage[sto_key] = sto_path
-                    self.status.add(sto_key,False,m['type'])
-                    
+                    storage = Storage(sto_key,sto_path,m['mandatory'],self)
+                    self.storage.append(storage)
+                    #self.storage[sto_key] = sto_path
+                    #self.status.add(sto_key,False,m['type'])
+
+    def showstorage(self):
+        for storage in self.storage:
+            storage.display()
+            
+    def rollback(self):
+        "Metodo para hacer rollback de lo archivado"
+        
     def archive(self):
+        self.tarsizes = 0
+        #pendiente de controlar errores y mandatory
         "Metodo que archiva todos los storages del usuario"
         if os.path.isdir(TARDIR) is False:
             print "ERROR: No existe el directorio para TARS"
@@ -100,14 +144,11 @@ class user(object):
         if os.path.isdir(rootpath) is False:
             os.mkdir(rootpath,0777)
     
-        for key in self.storage.iterkeys():
-            #Vuelvo a comprobar aqui que es accesible
-            if os.path.exists(self.storage[key]) is False:
-                continue
-            path = rootpath + '/' + self.cuenta + '_' + key + '_' + sessionId + ".tar"
-            print "Archiving ",self.storage[key]," in ",path," ... "
-            tar = tarfile.open(path,"w")
-            tar.add(self.storage[key])
+        for storage in self.storage:
+            storage.archive(rootpath)
+            print storage.tarsize
+            self.tarsizes = self.tarsizes + storage.tarsize
+        print "El tamaño de los tars es: ",self.tarsizes
                 
 def getListByDate(toDate , fromDate='1900-01-01'):
     Q_BETWEEN_DATES = 'FCADUCIDAD  BETWEEN to_date(\''+ fromDate +\
@@ -328,9 +369,9 @@ class shell(cmd.Cmd):
 
     def do_checkuser(self,line):
         usuario = user(line)
-        usuario.check()
-        usuario.status.show()
-        print "El estado del usuario para borrar es: ",usuario.status.ok()
+        status = usuario.check()
+        usuario.showstorage()
+        print "El estado del usuario para borrar es: ",status
         
     def do_archive(self,line):
         usuario = user(line)
