@@ -50,48 +50,6 @@ import config
 state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR')
 
 #FUNCIONES
-def checkUser(user):
-    """ Comprueba que el usuario cumple todas las condiciones para ser borrado
-        Las condiciones son:
-            a) Accesibilidad a todos los storages asociados con sus cuentas
-            b) Accesibilidad al objeto LDAP de AD si tiene cuenta AD
-     """       
-    for cuenta in userCuentas(user):
-        checkStorage(cuenta)
-
-def inputParameter(param,text,mandatory):
-    "Lee un parametro admitiendo que la tecla intro ponga el anterior"
-    while True:
-        prevParam = param
-        param = raw_input(text+'['+param+']: ')
-        if param == '':
-            param = prevParam
-        if param == 'c':
-            param = ''
-        if param == '' and mandatory:
-            continue
-        else:
-            return param
-            
-def EnterParameters():
-    "Lee por teclado los parametros de ejecucion"
-    while True:
-        global sessionId,fromDate,toDate
-        Print(1,"PASO2: Parametros de la sesion ('c' para borrar)")
-        sessionId = inputParameter(sessionId,"Identificador de sesion: ",True)      
-        fromDate = inputParameter(fromDate,"Fecha desde (yyyy-mm-dd): ",False)
-        toDate = inputParameter(toDate,"Fecha hasta (yyyy-mm-dd): ",True)
-        
-        Print(1,'\nSessionId = ['+sessionId+']')
-        Print(1,'fromDate = ['+fromDate+']')
-        Print(1,'toDate = ['+toDate+']')
-        
-        sal = raw_input('\nSon Correctos (S/n): ')
-        if sal == 'S':
-            config.status.sessionId = True
-            return
-        else:
-            continue
 
 def CheckEnvironment():
     Print(1,"PASO1: Comprobando el entorno de ejecucion ...")
@@ -164,7 +122,7 @@ def get_mount_point(algo):
             for line in ifp:
                 fields= line.rstrip('\n').split()
                 if algo in fields[0]: 
-                     return fields[1]
+                    return fields[1]
     except EnvironmentError:
         pass
     return None # explicit
@@ -328,21 +286,22 @@ class Storage(object):
             tar.close()
             self.tarsize = os.path.getsize(self.tarpath)
             self.state = state.ARCHIVED
+            return True
         except:
             Print(0,"ERROR: Archivando",self.key)
             self.state = state.TARFAIL
+            return False
                 
     def rollback(self):
         """Deshace el archivado borra los tars.
         - Si se ha borrado hacemos un untar
         - Borramos el tar
         - Ponemos el state como rollback"""
+        if DEBUG: pprint(self.__dict__)
         if self.state == state.DELETED:
             if self.unarchive() is False:
                 self.state = state.ERROR
                 return False
-        else:
-            return False
         try:
             os.remove(self.tarpath)
             self.tarpath = None
@@ -467,11 +426,20 @@ class User(object):
             os.mkdir(rootpath,0777)
     
         for storage in self.storage:
-            storage.archive(rootpath)
+            status = storage.archive(rootpath)
+            if status is False: break
             self.tarsizes = self.tarsizes + storage.tarsize
-        Print(2,'El tamaño de los tars para ',self.cuenta,' es: ',self.tarsizes)
-                
-
+        if status is False:
+            Print(0,'WARNING: Error archivando usuario ',self.cuenta,' haciendo rollback')
+            self.rollback()
+            try:
+                 #Borramos el directorio padre
+                 os.rmdir(rootpath)
+            except:
+                Print(0,'ABORT: No puedo borrar tar rootdir para ',self.cuenta,' ... abortando')
+                exit(False)
+        else:            
+            Print(2,'INFO: El tamaño de los tars para ',self.cuenta,' es: ',self.tarsizes)
 
 import cmd        
 class shell(cmd.Cmd):
