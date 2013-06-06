@@ -46,3 +46,5 @@ status=Status(["oracleCon",
                 "sessionId",
                 "userList"],
                 ["homemail"])
+
+TARDIR = '/tmp'

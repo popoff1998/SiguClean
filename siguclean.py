@@ -211,7 +211,33 @@ def getListByDate(toDate , fromDate='1900-01-01'):
     return userList
 
 #CLASES
-    
+
+class Log(object):
+    def __init__(self,session):
+        
+        self.session = session
+        self.fUsersDone = open(session.tardir+'/users.done','w')
+        self.fUsersFailed = open(session.tardir+'/users.failed','w')
+        self.fLogfile = open(session.tardir+'/logfile','w')
+        self.fUsersList = open(session.tardir+'/users.list','w')
+        
+    def writeDone(self,string):
+        self.fUsersDone.writelines(string+"\n")
+        self.fUsersDone.flush()
+        
+    def writeFailed(self,string):
+        self.fUsersFailed.writelines(string+"\n")
+        self.fUsersFailed.flush()
+        
+    def writeLog(self,string):
+        self.fLogfile.write(string+"\n")
+        self.fLogfile.flush()        
+        
+    def writeIterable(self,fHandle,iterable):
+        line = "\n".join(iterable)            
+        fHandle.write(line)
+        fHandle.flush()
+        
 class Session(object):
     def __init__(self,sessionId,fromDate,toDate):
         self.sessionId = sessionId
@@ -239,9 +265,13 @@ class Session(object):
         else:
             #Abortamos porque no existe el directorio padre de los tars
             Print(0,'ABORT: (session-start) No existe el directorio para tars: ',config.TARDIR)
+        #Log
+        log = Log(self)
         #Creo la lista de cuentas
         if not self.accountList:
             self.getaccountList()
+        log.writeIterable(log.fUsersList,self.accountList)
+        
         #Creo la lista de objetos usuario a partir de la lista de cuentas            
         if not self.userList:
             for account in self.accountList:
@@ -252,7 +282,11 @@ class Session(object):
             if user.check() is False:
                 Print(0,"ABORT: Chequeando el usuario ", user.cuenta)
                 exit(False)
-            user.archive(self.tardir)
+            ret = user.archive(self.tardir)
+            if ret is True:
+                log.writeDone(user.cuenta)
+            else:
+                log.writeFailed(user.cuenta)
             self.tarsizes = self.tarsizes + user.tarsizes
             
         Print(1,'Tamaño de tars de la session ',self.sessionId,' es ',sizeToHuman(self.tarsizes))
@@ -418,8 +452,8 @@ class User(object):
         #pendiente de controlar errores y mandatory
         "Metodo que archiva todos los storages del usuario"
         if os.path.isdir(tardir) is False:
-            Print(0,"ERROR: (user-archive) No existe el directorio para TARS",tardir)
-            exit
+            Print(0,"ABORT: (user-archive) No existe el directorio para TARS",tardir)
+            exit(False)
     
         rootpath = tardir + '/' + self.cuenta
         if os.path.isdir(rootpath) is False:
@@ -440,6 +474,7 @@ class User(object):
                 exit(False)
         else:            
             Print(2,'INFO: El tamaño de los tars para ',self.cuenta,' es: ',self.tarsizes)
+        return status
 
 import cmd        
 class shell(cmd.Cmd):
