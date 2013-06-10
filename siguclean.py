@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
 Created on Mon May 20 09:09:42 2013
@@ -270,7 +271,7 @@ class Session(object):
             exit(False)
             
         self.abortCount = self.abortCount + 1
-        if self.abortCount > self.abortLimit
+        if self.abortCount > self.abortLimit:
             self.writeLog('ABORT: Alcanzada la cuenta de errores para abort')
             exit(False)
                     
