@@ -49,13 +49,10 @@ from pprint import pprint
 import config
 import pickle
 
-state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR')
+state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR')
+
 
 #FUNCIONES
-
-def die():
-    #Funcion para ver si aborto o no
-    pass
 
 def CheckEnvironment():
     Print(1,"PASO1: Comprobando el entorno de ejecucion ...")
@@ -223,6 +220,7 @@ class Log(object):
         self.session = session
         self.fUsersDone = open(session.tardir+'/users.done','w')
         self.fUsersFailed = open(session.tardir+'/users.failed','w')
+        self.fUsersRollback = open(session.tardir+'/users.rollback','w')
         self.fLogfile = open(session.tardir+'/logfile','w')
         self.fUsersList = open(session.tardir+'/users.list','w')
         
@@ -234,6 +232,10 @@ class Log(object):
         self.fUsersFailed.writelines(string+"\n")
         self.fUsersFailed.flush()
         
+    def writeRollback(self,string):
+        self.fUsersRollback.writelines(string+"\n")
+        self.fUsersRollback.flush()
+
     def writeLog(self,string):
         self.fLogfile.write(string+"\n")
         self.fLogfile.flush()        
@@ -244,6 +246,20 @@ class Log(object):
         fHandle.flush()
         
 class Session(object):
+    
+    def die(user,rollback):
+        "Funcion que controla si abortamos o no y gestiona los logs"
+        if rollback is True:
+            ret = user.rollback()
+            if ret is True:
+                self.log.writeRollback(user.cuenta)
+            else:
+                checkAbort(True)
+        
+        self.log.writeFailed(user.cuenta)
+        checkAbort(False)
+        return False
+            
     def __init__(self,sessionId,fromDate,toDate):
         self.sessionId = sessionId
         self.fromDate = fromDate
@@ -271,11 +287,11 @@ class Session(object):
             #Abortamos porque no existe el directorio padre de los tars
             Print(0,'ABORT: (session-start) No existe el directorio para tars: ',config.TARDIR)
         #Log
-        log = Log(self)
+        self.log = Log(self)
         #Creo la lista de cuentas
         if not self.accountList:
             self.getaccountList()
-        log.writeIterable(log.fUsersList,self.accountList)
+        self.log.writeIterable(self.log.fUsersList,self.accountList)
         
         #Creo la lista de objetos usuario a partir de la lista de cuentas            
         if not self.userList:
@@ -286,31 +302,26 @@ class Session(object):
         for user in self.userList:
             #Chequeamos ...
             if user.check() is False:
-                Print(0,"ABORT: Chequeando el usuario ", user.cuenta)
-                exit(False)
+                if not die(user,False):continue
             #... Archivamos ...
             ret = user.archive(self.tardir)
             if ret is False:
-                log.writeFailed(user.cuenta)
-                if not die(): continue
+                if not die(user,True): continue
             self.tarsizes = self.tarsizes + user.tarsizes
             #... Borramos storage ...
             ret = user.deleteStorage()
             if ret is False:
-                log.writeFailed(user.cuenta)
-                if not die(): continue
+                if not die(user,True): continue
             #... Almacenamos el DN ...
             ret = user.archiveDN(self.tardir)
             if ret is False:
-                log.writeFailed(user.cuenta)
-                if not die(): continue
+                if not die(user,False): continue
             #... y borramos el DN            
             ret = user.deleteDN()
             if ret is False:
-                log.writeFailed(user.cuenta)
-                if not die(): continue
+                if not die(user,False): continue
             #Si hemos llegado aquí todo esta OK
-            log.writeDone(user.cuenta)
+            self.log.writeDone(user.cuenta)
         Print(1,'Tamaño de tars de la session ',self.sessionId,' es ',sizeToHuman(self.tarsizes))
         
 class Storage(object):
@@ -347,6 +358,16 @@ class Storage(object):
             Print(0,"ERROR: Archivando",self.key)
             self.state = state.TARFAIL
             return False
+    
+    def delete(self):
+        "Borra un storage"
+        try:        
+            shutil.rmtree(self.path)
+            self.state = state.DELETED
+            return True
+        except:
+            self.state = state.DELETEERROR
+            return False
                 
     def rollback(self):
         """Deshace el archivado borra los tars.
@@ -354,7 +375,7 @@ class Storage(object):
         - Borramos el tar
         - Ponemos el state como rollback"""
         if DEBUG: pprint(self.__dict__)
-        if self.state == state.DELETED:
+        if self.state == state.DELETED or self.state==DELETEERROR:
             if self.unarchive() is False:
                 self.state = state.ERROR
                 return False
@@ -451,6 +472,16 @@ class User(object):
         #Rellenamos el dn
         status,self.dn,self.adObject,result_type = dnFromUser(self.cuenta)
 
+    def deleteStorage(self):
+        "Borra todos los storages del usuario"
+        for storage in self.storage:
+            ret = storage.delete()
+            if ret is True: 
+                continue
+            else:
+                return False
+        return True
+        
     def showstorage(self):
         for storage in self.storage:
             storage.display()
@@ -468,11 +499,9 @@ class User(object):
         """
         for storage in self.storage:
             if storage.rollback() is False:
-                """Hay un error irrecuperable en el rollback
-                Es mejor abortar"""
-                Print(0,"ERROR Irrecuperable en rollback, abortamos")
-                exit(1)
-                
+                return False
+        return True
+        
     def getRootpath(self,tardir):
         if os.path.isdir(tardir) is False:
             Print(0,"ABORT: (user-archive) No existe el directorio para TARS",tardir)
