@@ -13,6 +13,7 @@ VERBOSE = 1
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
+#LDAP_SERVER = "ldap://ldap1.priv.uco.es"
 LDAP_SERVER = "ldaps://sunsrv.uco.es"
 BIND_DN = "Administrador@uco.es"
 USER_BASE = "dc=uco,dc=es"
@@ -46,10 +47,15 @@ from enum import Enum
 import tarfile
 from pprint import pprint
 import config
+import pickle
 
 state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR')
 
 #FUNCIONES
+
+def die():
+    #Funcion para ver si aborto o no
+    pass
 
 def CheckEnvironment():
     Print(1,"PASO1: Comprobando el entorno de ejecucion ...")
@@ -187,14 +193,13 @@ def dnFromUser(user):
         result_id = ldapCon.search(USER_BASE,
                             ldap.SCOPE_SUBTREE,
                             filtro,
-                            ["dn"],
-                            1)
-        result_type,tupla = ldapCon.result(result_id,0)
+                            None)
+        result_type,tupla = ldapCon.result(result_id,1)
         dn,none = tupla[0]
         status = True
     except:
         status = False
-    return status,dn,result_type
+    return status,dn,tupla,result_type
 
 def getListByDate(toDate , fromDate='1900-01-01'):
     Q_BETWEEN_DATES = 'FCADUCIDAD  BETWEEN to_date(\''+ fromDate +\
@@ -279,16 +284,33 @@ class Session(object):
                 self.userList.append(user) 
         #Proceso las entradas
         for user in self.userList:
+            #Chequeamos ...
             if user.check() is False:
                 Print(0,"ABORT: Chequeando el usuario ", user.cuenta)
                 exit(False)
+            #... Archivamos ...
             ret = user.archive(self.tardir)
-            if ret is True:
-                log.writeDone(user.cuenta)
-            else:
+            if ret is False:
                 log.writeFailed(user.cuenta)
+                if not die(): continue
             self.tarsizes = self.tarsizes + user.tarsizes
-            
+            #... Borramos storage ...
+            ret = user.deleteStorage()
+            if ret is False:
+                log.writeFailed(user.cuenta)
+                if not die(): continue
+            #... Almacenamos el DN ...
+            ret = user.archiveDN(self.tardir)
+            if ret is False:
+                log.writeFailed(user.cuenta)
+                if not die(): continue
+            #... y borramos el DN            
+            ret = user.deleteDN()
+            if ret is False:
+                log.writeFailed(user.cuenta)
+                if not die(): continue
+            #Si hemos llegado aquí todo esta OK
+            log.writeDone(user.cuenta)
         Print(1,'Tamaño de tars de la session ',self.sessionId,' es ',sizeToHuman(self.tarsizes))
         
 class Storage(object):
@@ -389,7 +411,8 @@ class User(object):
     def listCuentas(self):
         "Devuelve una tupla con las cuentas que tiene el usuario"
         return ('LINUX','MAIL') #dummy return
-    
+
+        
     def __init__(self,cuenta):
         try:
             dummy = self.cuenta
@@ -400,6 +423,7 @@ class User(object):
         self.dn = None
         self.cuenta = cuenta
         self.storage = []
+        self.rootpath = ''
         for c in self.listCuentas():
             #relleno el diccionario storage
             for m in MOUNTS:
@@ -424,6 +448,8 @@ class User(object):
                             self.dn = False                       
                     storage = Storage(sto_key,sto_path,m['mandatory'],self)
                     self.storage.append(storage)
+        #Rellenamos el dn
+        status,self.dn,self.adObject,result_type = dnFromUser(self.cuenta)
 
     def showstorage(self):
         for storage in self.storage:
@@ -447,20 +473,24 @@ class User(object):
                 Print(0,"ERROR Irrecuperable en rollback, abortamos")
                 exit(1)
                 
+    def getRootpath(self,tardir):
+        if os.path.isdir(tardir) is False:
+            Print(0,"ABORT: (user-archive) No existe el directorio para TARS",tardir)
+            exit(False)
+
+        self.rootpath = tardir + '/' + self.cuenta
+        if os.path.isdir(self.rootpath) is False:
+            os.mkdir(self.rootpath,0777)    
+
     def archive(self,tardir):
         self.tarsizes = 0
         #pendiente de controlar errores y mandatory
         "Metodo que archiva todos los storages del usuario"
-        if os.path.isdir(tardir) is False:
-            Print(0,"ABORT: (user-archive) No existe el directorio para TARS",tardir)
-            exit(False)
-    
-        rootpath = tardir + '/' + self.cuenta
-        if os.path.isdir(rootpath) is False:
-            os.mkdir(rootpath,0777)
-    
+        #Vemos si rootpath existe
+        if not self.rootpath: self.getRootpath(tardir)
+        
         for storage in self.storage:
-            status = storage.archive(rootpath)
+            status = storage.archive(self.rootpath)
             if status is False: break
             self.tarsizes = self.tarsizes + storage.tarsize
         if status is False:
@@ -468,13 +498,67 @@ class User(object):
             self.rollback()
             try:
                  #Borramos el directorio padre
-                 os.rmdir(rootpath)
+                 os.rmdir(self.rootpath)
             except:
                 Print(0,'ABORT: No puedo borrar tar rootdir para ',self.cuenta,' ... abortando')
                 exit(False)
         else:            
             Print(2,'INFO: El tamaño de los tars para ',self.cuenta,' es: ',self.tarsizes)
         return status
+
+    def archiveDN(self,tardir):
+        "Usando pickle archiva el objeto DN de AD"
+        #Vemos si rootpath existe
+        if not self.rootpath: self.getRootpath(tardir)
+        try:
+            adFile = open(self.rootpath+'/'+self.cuenta+'.dn','w')
+            pickle.dump(self.adObject,adFile)
+            adFile.close()
+            return True
+        except:
+            return False
+            
+    def deleteDN(self):
+        "Borra el dn del usuario"
+        Print(1,'Borrando DN: ',self.dn)
+        if self.dn is not None:
+            try:            
+                ldapCon.delete_s(self.dn)                
+                return True
+            except ldap.LDAPError, e:
+                Print(0,e)
+        return False
+    
+    def insertDN(self,tardir):
+        "Como no es posible recuperar el SID no tiene sentido usarla"
+        if not self.rootpath: self.getRootpath(tardir)        
+
+        if self.dn is None:
+            try:
+                adFile = open(self.rootpath+'/'+self.cuenta+'.dn','r')
+                self.adObject = pickle.load(adFile)
+                
+                item = self.adObject[0]
+                dn = item[0]
+                attrs = item[1]
+                if DEBUG: print "DN:",dn
+                if DEBUG: print "AT:",atributos
+
+                attrs=[]
+                attrList = [ "cn", "countryCode", "objectClass", "userPrincipalName", "info", "name", "displayName", "givenName", "sAMAccountName" ]
+                for attr in atributos:
+                   if attr in attrList:
+                      attrs.append( (attr, atributos[i]))
+
+                if DEBUG: print "==== ATTRS =============================="
+                if DEBUG: pprint( attrs)
+                ldapCon.add_s( dn, attrs)
+                adFile.close()
+                return True
+            except ldap.LDAPError, e:
+                Print(0,e)
+                return False
+        
 
 import cmd        
 class shell(cmd.Cmd):
@@ -503,7 +587,7 @@ class shell(cmd.Cmd):
         Print(1,"El estado OK es ",config.status.ok())
     
     def do_dnfromuser(self,line):
-        status,dn,result_type = dnFromUser(line)
+        status,dn,adObject,result_type = dnFromUser(line)
         if status:
             Print(1,dn)
         else:
@@ -511,7 +595,7 @@ class shell(cmd.Cmd):
         
     def do_printdns(self,line):
         for user in userList:
-            status,dn,result_type = dnFromUser(user)
+            status,dn,adObject,result_type = dnFromUser(user)
             if status:
                 Print(1,dn)
             else:
@@ -535,6 +619,21 @@ class shell(cmd.Cmd):
         if DEBUG: print "DEBUG: sessionID ",sessionId
         ses = Session(sessionId,fromDate,toDate)
         ses.start()
+
+    def do_archivedn(self,line):
+        usuario = User(line)
+        ret = usuario.archiveDN(config.TARDIR)
+        if ret is False: print 'ERROR ARCHIVANDO DN'
+        
+    def do_deletedn(self,line):
+        usuario = User(line)
+        ret = usuario.deleteDN()
+        if ret is False: print 'ERROR BORRANDO DN'
+    
+    def do_insertdn(self,line):
+        usuario = User(line)
+        ret = usuario.insertDN( config.TARDIR)
+        if ret is False: print 'ERROR INSERTANDO DN'
         
     def __init__(self):
         cmd.Cmd.__init__(self)
