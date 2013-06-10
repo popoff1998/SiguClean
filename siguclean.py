@@ -194,38 +194,6 @@ def EnterParameters():
         else:
             continue
 
-def inputParameter(param,text,mandatory):
-    "Lee un parametro admitiendo que la tecla intro ponga el anterior"
-    while True:
-        prevParam = param
-        param = raw_input(text+'['+param+']: ')
-        if param == '':
-            param = prevParam
-        if param == 'c':
-            param = ''
-        if param == '' and mandatory:
-            continue
-        else:
-            return param
-            
-def EnterParameters():
-    "Lee por teclado los parametros de ejecucion"
-    while True:
-        global sessionId,fromDate,toDate
-        print "PASO2: Parametros de la sesion ('c' para borrar)"
-        sessionId = inputParameter(sessionId,"Identificador de sesion: ",True)      
-        fromDate = inputParameter(fromDate,"Fecha desde (yyyy-mm-dd): ",False)
-        toDate = inputParameter(toDate,"Fecha hasta (yyyy-mm-dd): ",True)
-        
-        print '\nSessionId = ['+sessionId+']'
-        print 'fromDate = ['+fromDate+']'
-        print 'toDate = ['+toDate+']'
-        
-        sal = raw_input('\nSon Correctos (S/n): ')
-        if sal == 'S':
-            return
-        else:
-            continue
 def pager(iterable, page_size):
     import itertools 
     args = [iter(iterable)] * page_size
