@@ -55,6 +55,7 @@ else:
     toDate = ""
 
 import os,sys
+from shutil import rmtree
 from stat import *
 from enum import Enum
 import tarfile
@@ -158,8 +159,73 @@ def CheckMounts():
             Print(1,"NO ACCESIBLE")
             salgo = True
     if salgo:
-        exit
+        exit(False)
 
+def inputParameter(param,text,mandatory):
+    "Lee un parametro admitiendo que la tecla intro ponga el anterior"
+    while True:
+        prevParam = param
+        param = raw_input(text+'['+param+']: ')
+        if param == '':
+            param = prevParam
+        if param == 'c':
+            param = ''
+        if param == '' and mandatory:
+            continue
+        else:
+            return param
+            
+def EnterParameters():
+    "Lee por teclado los parametros de ejecucion"
+    while True:
+        global sessionId,fromDate,toDate
+        print "PASO2: Parametros de la sesion ('c' para borrar)"
+        sessionId = inputParameter(sessionId,"Identificador de sesion: ",True)      
+        fromDate = inputParameter(fromDate,"Fecha desde (yyyy-mm-dd): ",False)
+        toDate = inputParameter(toDate,"Fecha hasta (yyyy-mm-dd): ",True)
+        
+        print '\nSessionId = ['+sessionId+']'
+        print 'fromDate = ['+fromDate+']'
+        print 'toDate = ['+toDate+']'
+        
+        sal = raw_input('\nSon Correctos (S/n): ')
+        if sal == 'S':
+            return
+        else:
+            continue
+
+def inputParameter(param,text,mandatory):
+    "Lee un parametro admitiendo que la tecla intro ponga el anterior"
+    while True:
+        prevParam = param
+        param = raw_input(text+'['+param+']: ')
+        if param == '':
+            param = prevParam
+        if param == 'c':
+            param = ''
+        if param == '' and mandatory:
+            continue
+        else:
+            return param
+            
+def EnterParameters():
+    "Lee por teclado los parametros de ejecucion"
+    while True:
+        global sessionId,fromDate,toDate
+        print "PASO2: Parametros de la sesion ('c' para borrar)"
+        sessionId = inputParameter(sessionId,"Identificador de sesion: ",True)      
+        fromDate = inputParameter(fromDate,"Fecha desde (yyyy-mm-dd): ",False)
+        toDate = inputParameter(toDate,"Fecha hasta (yyyy-mm-dd): ",True)
+        
+        print '\nSessionId = ['+sessionId+']'
+        print 'fromDate = ['+fromDate+']'
+        print 'toDate = ['+toDate+']'
+        
+        sal = raw_input('\nSon Correctos (S/n): ')
+        if sal == 'S':
+            return
+        else:
+            continue
 def pager(iterable, page_size):
     import itertools 
     args = [iter(iterable)] * page_size
@@ -263,16 +329,16 @@ class Session(object):
     def abort(self,severity):
         "Funcion que lleva el control sobre el proceso de abortar"
         if ABORTALWAYS is True:
-            self.writeLog('ABORT: Error y ABORTALWAYS es verdadero')
+            self.log.writeLog('ABORT: Error y ABORTALWAYS es verdadero')
             exit(False)
 
         if ABORTINSEVERITY is True and severity is True:
-            self.writeLog('ABORT: Error con severidad y ABORTINSEVERITY es verdadero')
+            self.log.writeLog('ABORT: Error con severidad y ABORTINSEVERITY es verdadero')
             exit(False)
             
         self.abortCount = self.abortCount + 1
         if self.abortCount > self.abortLimit:
-            self.writeLog('ABORT: Alcanzada la cuenta de errores para abort')
+            self.log.writeLog('ABORT: Alcanzada la cuenta de errores para abort')
             exit(False)
                     
         
@@ -335,24 +401,24 @@ class Session(object):
         for user in self.userList:
             #Chequeamos ...
             if user.check() is False:
-                if not die(user,False):continue
+                if not self.die(user,False):continue
             #... Archivamos ...
             ret = user.archive(self.tardir)
             if ret is False:
-                if not die(user,True): continue
+                if not self.die(user,True): continue
             self.tarsizes = self.tarsizes + user.tarsizes
             #... Borramos storage ...
             ret = user.deleteStorage()
             if ret is False:
-                if not die(user,True): continue
+                if not self.die(user,True): continue
             #... Almacenamos el DN ...
             ret = user.archiveDN(self.tardir)
             if ret is False:
-                if not die(user,False): continue
+                if not self.die(user,False): continue
             #... y borramos el DN            
             ret = user.deleteDN()
             if ret is False:
-                if not die(user,False): continue
+                if not self.die(user,False): continue
             #Si hemos llegado aquí todo esta OK
             if ABORTDECREASE is True: self.abortCount = self.abortCount -1
             if self.abortCount < 0: self.abortCount = 0
@@ -398,7 +464,7 @@ class Storage(object):
     def delete(self):
         "Borra un storage"
         try:        
-            shutil.rmtree(self.path)
+            rmtree(self.path)
             self.state = state.DELETED
             return True
         except:
@@ -435,7 +501,7 @@ class Storage(object):
                 tar.close()
                 return True
             except:
-                Print1(0,"Error unarchiving ",self.key," to ",self.path," from ",self.tarpath," ... ")
+                Print(0,"Error unarchiving ",self.key," to ",self.path," from ",self.tarpath," ... ")
                 return False
 
     def exist(self):
@@ -605,7 +671,7 @@ class User(object):
                 
                 item = self.adObject[0]
                 dn = item[0]
-                attrs = item[1]
+                atributos = item[1]
                 if DEBUG: print "DN:",dn
                 if DEBUG: print "AT:",atributos
 
@@ -613,7 +679,7 @@ class User(object):
                 attrList = [ "cn", "countryCode", "objectClass", "userPrincipalName", "info", "name", "displayName", "givenName", "sAMAccountName" ]
                 for attr in atributos:
                    if attr in attrList:
-                      attrs.append( (attr, atributos[i]))
+                      attrs.append( (attr, atributos[attr]))
 
                 if DEBUG: print "==== ATTRS =============================="
                 if DEBUG: pprint( attrs)
