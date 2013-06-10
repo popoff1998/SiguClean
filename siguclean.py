@@ -19,8 +19,20 @@ BIND_DN = "Administrador@uco.es"
 USER_BASE = "dc=uco,dc=es"
 ORACLE_SERVER='ibmblade47/av10g'
 
+#Control del abort
+"""
+ABORTLIMIT: Numero de fallos admitidos
+ABORTDECREASE: Si un borrado Ok debe decrementar la cuenta de fallos
+ABORTALWAYS: Si cualquier fallo debe abortar
+ABORTINSEVERITY: Si un fallo con severidad debe abortar
+"""
+ABORTLIMIT      = 5
+ABORTDECREASE   = True
+ABORTALWAYS     = False
+ABORTINSEVERITY = False
 
-HOMESNFS = 'INSTALA1CIONES'
+#VARIABLES DE ETIQUETA DE FS
+HOMESNFS = 'INSTALACIONES'
 HOMEMAIL = 'NEWMAIL/MAIL'
 
 #PARAMETROS DE LA EJECUCION
@@ -247,17 +259,32 @@ class Log(object):
         
 class Session(object):
     
-    def die(user,rollback):
+    def abort(self,severity):
+        "Funcion que lleva el control sobre el proceso de abortar"
+        if ABORTALWAYS is True:
+            self.writeLog('ABORT: Error y ABORTALWAYS es verdadero')
+            exit(False)
+
+        if ABORTINSEVERITY is True and severity is True:
+            self.writeLog('ABORT: Error con severidad y ABORTINSEVERITY es verdadero')
+            exit(False)
+            
+        self.abortCount = self.abortCount + 1
+        if self.abortCount > self.abortLimit
+            self.writeLog('ABORT: Alcanzada la cuenta de errores para abort')
+            exit(False)
+                    
+        
+    def die(self,user,rollback):
         "Funcion que controla si abortamos o no y gestiona los logs"
         if rollback is True:
             ret = user.rollback()
             if ret is True:
                 self.log.writeRollback(user.cuenta)
+                self.abort(False)
             else:
-                checkAbort(True)
-        
-        self.log.writeFailed(user.cuenta)
-        checkAbort(False)
+                self.log.writeFailed(user.cuenta)
+                self.abort(True)
         return False
             
     def __init__(self,sessionId,fromDate,toDate):
@@ -268,6 +295,11 @@ class Session(object):
         self.userList = []
         self.tarsizes = 0
         self.tardir = ''
+        self.abortCount = 0
+        self.abortLimit = ABORTLIMIT
+        self.abortDecrease = ABORTDECREASE
+        self.abortAlways = ABORTALWAYS
+        self.abortInSeverity = ABORTINSEVERITY
         
     def getaccountList(self):
         if TEST:
@@ -321,6 +353,9 @@ class Session(object):
             if ret is False:
                 if not die(user,False): continue
             #Si hemos llegado aquí todo esta OK
+            if ABORTDECREASE is True: self.abortCount = self.abortCount -1
+            if self.abortCount < 0: self.abortCount = 0
+            if DEBUG: self.log.writeLog('abortCount: '+self.abortCount)                
             self.log.writeDone(user.cuenta)
         Print(1,'Tamaño de tars de la session ',self.sessionId,' es ',sizeToHuman(self.tarsizes))
         
