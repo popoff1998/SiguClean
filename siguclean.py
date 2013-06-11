@@ -43,7 +43,7 @@ if TEST:
     toDate = "2012-01-01"
 
     MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFSTEST','mandatory':True,'val':''},
-              {'account':'MAIL','fs':'homemail','label':'NADADENADA','mandatory':False,'val':''})  
+              {'account':'MAIL','fs':'homemail','label':'NEWMAILTEST','mandatory':False,'val':''})  
 else:
     MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'INSTALACIONES','mandatory':True,'val':''},
               {'account':'MAIL','fs':'homemail','label':'INSTALACIONES','mandatory':False,'val':''},  
@@ -250,7 +250,7 @@ def getListByDate(toDate , fromDate='1900-01-01'):
                        '\',\'yyyy-mm-dd\') AND to_date(\''+ toDate +\
                        '\',\'yyyy-mm-dd\')'
     query = Q_GET_BORRABLES + ' AND ' + Q_BETWEEN_DATES
-    if DEBUG: print("DEBUG: getListByDate Query:",query)
+    if DEBUG: print("DEBUG: (getListByDate) Query:",query)
     cursor = oracleCon.cursor()
     cursor.execute(query)     
     tmpList = cursor.fetchall()
@@ -344,7 +344,7 @@ class Session(object):
     
     def start(self):
         #Directorio para TARS
-        if DEBUG: print 'DEBUG: config.TARDIR es: ',config.TARDIR
+        if DEBUG: print 'DEBUG: (session.start) config.TARDIR es: ',config.TARDIR
         if os.path.exists(config.TARDIR):            
             if self.sessionId:            
                 self.tardir = config.TARDIR + '/' + self.sessionId
@@ -390,7 +390,7 @@ class Session(object):
             #Si hemos llegado aquí todo esta OK
             if ABORTDECREASE is True: self.abortCount = self.abortCount -1
             if self.abortCount < 0: self.abortCount = 0
-            if DEBUG: self.log.writeLog('abortCount: '+self.abortCount)                
+            if DEBUG: self.log.writeLog('DEBUG: (session.start) abortCount: '+self.abortCount)                
             self.log.writeDone(user.cuenta)
         Print(1,'Tamaño de tars de la session ',self.sessionId,' es ',sizeToHuman(self.tarsizes))
         
@@ -444,12 +444,17 @@ class Storage(object):
         - Si se ha borrado hacemos un untar
         - Borramos el tar
         - Ponemos el state como rollback"""
-        if DEBUG: pprint(self.__dict__)
-        if self.state == state.DELETED or self.state==DELETEERROR:
+        if DEBUG: pprint('DEBUG: (storage.rollback)',self.__dict__)
+        if self.state == state.DELETED or self.state == state.DELETEERROR:
             if self.unarchive() is False:
                 self.state = state.ERROR
                 return False
         try:
+            #Si no está archivado no hay que borrar el tar
+            if self.state not in (state.ARCHIVED,state.TARFAIL): 
+                if DEBUG: print "INFO: (storage.rollback) No hago rollback de ",self.key," no estaba archivado"                
+                return True
+            #Borramos el tar
             os.remove(self.tarpath)
             self.tarpath = None
             self.tarsize = 0
@@ -496,7 +501,7 @@ class User(object):
             if storage.mandatory:
                 if storage.exist() is False:
                     status = False
-                    if DEBUG: print "DEBUG: NO DEBO ENTRAR AQUI SI MANDATORY ES FALSE O EL STORAGE EXISTE"
+                    if DEBUG: print "DEBUG: (user.check) NO DEBO ENTRAR AQUI SI MANDATORY ES FALSE O EL STORAGE EXISTE"
         return status
         
     def listCuentas(self):
@@ -549,6 +554,7 @@ class User(object):
             if ret is True: 
                 continue
             else:
+                if DEBUG: print "ERROR: (user.deleteStorage) user ",self.cuenta                
                 return False
         return True
         
@@ -589,11 +595,13 @@ class User(object):
         if not self.rootpath: self.getRootpath(tardir)
         
         for storage in self.storage:
-            status = storage.archive(self.rootpath)
-            if status is False: break
+            ret = storage.archive(self.rootpath)
+            if DEBUG: print "INFO: (user.archive) mandatory de ",storage.key," es ",storage.mandatory
+            if ret is False and storage.mandatory is True: break
+            ret = True
             self.tarsizes = self.tarsizes + storage.tarsize
-        if status is False:
-            Print(0,'WARNING: Error archivando usuario ',self.cuenta,' haciendo rollback')
+        if ret is False:
+            Print(0,'WARNING: Error archivando usuario ',self.cuenta,' fs ',storage.key,' haciendo rollback')
             self.rollback()
             try:
                  #Borramos el directorio padre
@@ -603,7 +611,7 @@ class User(object):
                 exit(False)
         else:            
             Print(2,'INFO: El tamaño de los tars para ',self.cuenta,' es: ',self.tarsizes)
-        return status
+        return True
 
     def archiveDN(self,tardir):
         "Usando pickle archiva el objeto DN de AD"
@@ -640,8 +648,8 @@ class User(object):
                 item = self.adObject[0]
                 dn = item[0]
                 atributos = item[1]
-                if DEBUG: print "DN:",dn
-                if DEBUG: print "AT:",atributos
+                if DEBUG: print "DEBUG: (user.insertDN) DN:",dn
+                if DEBUG: print "DEBUG: (user.insertDN) AT:",atributos
 
                 attrs=[]
                 attrList = [ "cn", "countryCode", "objectClass", "userPrincipalName", "info", "name", "displayName", "givenName", "sAMAccountName" ]
@@ -649,8 +657,7 @@ class User(object):
                    if attr in attrList:
                       attrs.append( (attr, atributos[attr]))
 
-                if DEBUG: print "==== ATTRS =============================="
-                if DEBUG: pprint( attrs)
+                if DEBUG: pprint("DEBUG: (user.insertDN) ==== ATTRS ====",attrs)
                 ldapCon.add_s( dn, attrs)
                 adFile.close()
                 return True
