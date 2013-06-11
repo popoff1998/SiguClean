@@ -67,6 +67,19 @@ state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR
 
 
 #FUNCIONES
+import collections
+
+def iterable(obj):
+    if isinstance(obj, collections.Iterable):
+        return True
+    return False
+    
+def Pprint(*args):
+    for arg in args:
+        if iterable(arg): 
+            pprint(arg),
+        else:
+            print(arg),
 
 def CheckEnvironment():
     Print(1,"PASO1: Comprobando el entorno de ejecucion ...")
@@ -379,14 +392,16 @@ class Session(object):
             ret = user.deleteStorage()
             if ret is False:
                 if not self.die(user,True): continue
-            #... Almacenamos el DN ...
-            ret = user.archiveDN(self.tardir)
-            if ret is False:
-                if not self.die(user,False): continue
-            #... y borramos el DN            
-            ret = user.deleteDN()
-            if ret is False:
-                if not self.die(user,False): continue
+            #Lo siguiente solo lo hacemos si tiene cuenta windows
+            if 'WINDOWS' in user.cuentas:
+                #... Almacenamos el DN ...
+                ret = user.archiveDN(self.tardir)
+                if ret is False:
+                    if not self.die(user,False): continue
+                #... y borramos el DN            
+                ret = user.deleteDN()
+                if ret is False:
+                    if not self.die(user,False): continue
             #Si hemos llegado aquí todo esta OK
             if ABORTDECREASE is True: self.abortCount = self.abortCount -1
             if self.abortCount < 0: self.abortCount = 0
@@ -431,6 +446,10 @@ class Storage(object):
     
     def delete(self):
         "Borra un storage"
+        #Primero tengo que controlar si no existe y no es mandatory
+        if self.exist() is False and self.mandatory is False:
+            self.state = state.NOACCESIBLE
+            return True
         try:        
             rmtree(self.path)
             self.state = state.DELETED
@@ -444,7 +463,7 @@ class Storage(object):
         - Si se ha borrado hacemos un untar
         - Borramos el tar
         - Ponemos el state como rollback"""
-        if DEBUG: pprint('DEBUG: (storage.rollback)',self.__dict__)
+        if DEBUG: Pprint('DEBUG: (storage.rollback)',self.__dict__)
         if self.state == state.DELETED or self.state == state.DELETEERROR:
             if self.unarchive() is False:
                 self.state = state.ERROR
@@ -520,7 +539,8 @@ class User(object):
         self.cuenta = cuenta
         self.storage = []
         self.rootpath = ''
-        for c in self.listCuentas():
+        self.cuentas = self.listCuentas()
+        for c in self.cuentas:
             #relleno el diccionario storage
             for m in MOUNTS:
                 #Si el montaje no esta paso a la siguiente cuenta
@@ -587,9 +607,17 @@ class User(object):
         if os.path.isdir(self.rootpath) is False:
             os.mkdir(self.rootpath,0777)    
 
+    def unarchive(self,tardir):
+        "Este metodo es useless pues debe rellenar los storages primero"
+        #Vemos si rootpath existe
+        if not self.rootpath: self.getRootpath(tardir)
+
+        for storage in self.storage:
+            storage.unarchive()
+            
+            
     def archive(self,tardir):
         self.tarsizes = 0
-        #pendiente de controlar errores y mandatory
         "Metodo que archiva todos los storages del usuario"
         #Vemos si rootpath existe
         if not self.rootpath: self.getRootpath(tardir)
@@ -657,7 +685,7 @@ class User(object):
                    if attr in attrList:
                       attrs.append( (attr, atributos[attr]))
 
-                if DEBUG: pprint("DEBUG: (user.insertDN) ==== ATTRS ====",attrs)
+                if DEBUG: Pprint("DEBUG: (user.insertDN) ==== ATTRS ====",attrs)
                 ldapCon.add_s( dn, attrs)
                 adFile.close()
                 return True
@@ -720,6 +748,10 @@ class shell(cmd.Cmd):
     def do_archive(self,line):
         usuario = User(line)
         usuario.archive(config.TARDIR)
+
+    def do_unarchive(self,line):
+        usuario = User(line)
+        usuario.unarchive(config.TARDIR)
 
     def do_startsession(self,line):
         if DEBUG: print "DEBUG: sessionID ",sessionId
