@@ -305,6 +305,10 @@ class Session(object):
     
     def abort(self,severity):
         "Funcion que lleva el control sobre el proceso de abortar"
+        if ABORTLIMIT == 0: 
+            self.log.writeLog('ABORT: No abortamos porque ABORTLIMIT es 0')
+            return
+                
         if ABORTALWAYS is True:
             self.log.writeLog('ABORT: Error y ABORTALWAYS es verdadero')
             exit(False)
@@ -788,7 +792,7 @@ parser.add_argument('-i','--interactive',help='Iniciar sesion interativa',action
 parser.add_argument('-a','--abortalways',help='Abortar siempre ante un error inesperado',dest='ABORTALWAYS',action='store_true',default='False')
 parser.add_argument('-d','--abortdecrease',help='Decrementar la cuenta de errores cuando se produzca un exito en el archivado',dest='ABORTDECREASE',action='store_true',default='False')
 parser.add_argument('-s','--abortinseverity',help='Abortar si se produce un error con severidad',dest='ABORTINSEVERITY',action='store_true',default='False')
-parser.add_argument('-l','--abortlimit',help='Limite de la cuenta de errores para abortar',dest='ABORTLIMIT',action='store',default='5')
+parser.add_argument('-l','--abortlimit',help='Limite de la cuenta de errores para abortar (0 para no abortar nunca)',dest='ABORTLIMIT',action='store',default='5')
 parser.add_argument('-f','--from',help='Seleccionar usuarios desde esta fecha',dest='fromDate')
 parser.add_argument('-t','--to',help='Seleccionar usuarios hasta esta fecha',dest='toDate')
 parser.add_argument('--test',help='Para usar solo en el peirodo de pruebas',dest='TEST',action='store_true')
@@ -807,7 +811,7 @@ if args.interactive:
 for var in args.__dict__:
     if var in globals().keys():
         if vars(args)[var] is not None:
-            print 'existe ',var,' y es ',vars(args)[var]
+            if DEBUG: print 'existe ',var,' y es ',vars(args)[var]
             globals()[var] = vars(args)[var]
     
 print 'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE
