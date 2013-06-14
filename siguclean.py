@@ -407,9 +407,10 @@ class Session(object):
         
 class Storage(object):
     
-    def __init__(self,key,path,mandatory,parent):
+    def __init__(self,key,path,link,mandatory,parent):
         self.key = key
         self.path = path
+        self.link = link
         self.mandatory = mandatory 
         self.tarpath = None
         self.parent = parent
@@ -448,6 +449,8 @@ class Storage(object):
             return True
         try:        
             rmtree(self.path)
+            if self.link is not None:
+                os.remove(self.link)
             self.state = state.DELETED
             return True
         except:
@@ -464,6 +467,9 @@ class Storage(object):
             if self.unarchive() is False:
                 self.state = state.ERROR
                 return False
+            #Restauro el link si existe
+            if self.link is not None:
+                os.link(self.link,self.path)
         try:
             #Si no está archivado no hay que borrar el tar
             if self.state not in (state.ARCHIVED,state.TARFAIL): 
@@ -539,18 +545,17 @@ class User(object):
         for c in self.cuentas:
             #relleno el diccionario storage
             for m in MOUNTS:
+                sto_link = None
                 #Si el montaje no esta paso a la siguiente cuenta
                 if m['val'] is None:
                     continue
                 if c == m['account']:
                     sto_path = m['val'] + '/' + self.cuenta
                     sto_key = m['fs']
-                    #Trato el caso especial de mail
-                    if c == 'MAIL':
-                        if os.path.islink(sto_path):
-                            storage = Storage('MAILLINK',sto_path,False,self)
-                            self.storage.append(storage)
-                            sto_path = os.path.realpath(sto_path)
+                    #Si es un enlace lo sustituyo por el path real
+                    if os.path.islink(sto_path):
+                        sto_link = sto_path
+                        sto_path = os.path.realpath(sto_path)
                     #Caso especial de WINDOWS (calcular dn)
                     if c == 'WINDOWS':
                         status,dn,result_type = dnFromUser(self.cuenta)
@@ -558,7 +563,7 @@ class User(object):
                             self.dn = dn
                         else:
                             self.dn = False                       
-                    storage = Storage(sto_key,sto_path,m['mandatory'],self)
+                    storage = Storage(sto_key,sto_path,sto_link,m['mandatory'],self)
                     self.storage.append(storage)
         #Rellenamos el dn
         status,self.dn,self.adObject,result_type = dnFromUser(self.cuenta)
