@@ -19,6 +19,7 @@ LDAP_SERVER = "ldaps://sunsrv.uco.es"
 BIND_DN = "Administrador@uco.es"
 USER_BASE = "dc=uco,dc=es"
 ORACLE_SERVER='ibmblade47/av10g'
+ALTROOTPREFIX = '0_'
 
 #Control del abort
 """
@@ -499,11 +500,39 @@ class Storage(object):
                 return False
 
     def exist(self):
-         """Comprueba la accesibilidad de un storage"""
-         ret = True if os.path.exists(self.path) else False
-         self.accesible = ret
-         return ret
-
+        """Comprueba la accesibilidad de un storage
+        se tiene en cuenta que si no existe en el sitio por defecto
+        puede existir en los root alternativos"""
+        #Existe el path
+        if os.path.exists(self.path):
+            self.accesible = True
+            return True
+        if DEBUG: print "No existe path directo para ",self.path," busco alternativo"            
+        #Aun no existiendo puede estar en un directorio movido, lo buscamos
+        parentdir = os.path.dirname(self.path)
+        basename = os.path.basename(self.path)
+        #Buscamos en directorios alternativos del parentdir
+        #esta busqueda puede ser gravosa si se debe repetir para cada usuario por
+        #lo que una vez averiguados los alternativos se deben de almacenar globalmente
+        if not parentdir in config.altdirs: 
+            if DEBUG: print "INFO: No existe ",parentdir," construyo la lista alternativa"
+            config.altdirs[parentdir] = [s for s in os.listdir(parentdir) 
+                                        if s.startswith(ALTROOTPREFIX)] 
+        #Si la lista esta vacia salimos directamente
+        if not config.altdirs[parentdir]:
+            if DEBUG: print "INFO: No existem directorios alternativos para ",parentdir 
+            return False
+        #Buscamos si existe en cualquiera de los directorios alternativos
+        for path in config.altdirs[parentdir]:
+            joinpath = os.path.join(path,basename)
+            if os.path.exists(joinpath):
+                if DEBUG: print "INFO: encontrado alternativo para ",joinpath
+                self.path = joinpath
+                self.accesible = True
+                return True
+        #Si llegamos aqui es que no existe
+        return False
+        
 class User(object):
     global status    
     instancias = {}

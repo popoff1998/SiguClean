@@ -48,3 +48,5 @@ status=Status(["oracleCon",
                 ["homemail"])
 
 TARDIR = '/tmp'
+
+parentdir = {}
