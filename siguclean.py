@@ -384,23 +384,19 @@ class Session(object):
             if user.check() is False:
                 if not self.die(user,False):continue
             #... Archivamos ...
-            ret = user.archive(self.tardir)
-            if ret is False:
+            if user.archive(self.tardir) is False:
                 if not self.die(user,True): continue
             self.tarsizes = self.tarsizes + user.tarsizes
             #... Borramos storage ...
-            ret = user.deleteStorage()
-            if ret is False:
+            if user.deleteStorage() is False:
                 if not self.die(user,True): continue
             #Lo siguiente solo lo hacemos si tiene cuenta windows
             if 'WINDOWS' in user.cuentas:
                 #... Almacenamos el DN ...
-                ret = user.archiveDN(self.tardir)
-                if ret is False:
+                if user.archiveDN(self.tardir) is False:
                     if not self.die(user,False): continue
                 #... y borramos el DN            
-                ret = user.deleteDN()
-                if ret is False:
+                if user.deleteDN() is False:
                     if not self.die(user,False): continue
             #Si hemos llegado aquí todo esta OK
             if ABORTDECREASE is True: self.abortCount = self.abortCount -1
