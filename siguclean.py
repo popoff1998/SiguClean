@@ -20,6 +20,7 @@ BIND_DN = "Administrador@uco.es"
 USER_BASE = "dc=uco,dc=es"
 ORACLE_SERVER='ibmblade47/av10g'
 ALTROOTPREFIX = '0_'
+MAXSIZE = 0
 
 #Control del abort
 """
@@ -221,15 +222,30 @@ def imprime(userList):
             break       
         
 def sizeToHuman(size):
-    letter = ('B','K','M','G','T')
+    symbols = ('B','K','M','G','T')
     indice = 0
     while(True):
         if DEBUG: print "DEBUG: (sizeToHuman) Size antes de redondear es: ",size 
         if size < 1024:
-            string = str(size)+letter[indice]
+            string = str(size)+symbols[indice]
             return string
         size = size / 1024
         indice = indice + 1
+        
+def humanToSize(size):
+    symbols = ('B','K','M','G','T')
+    letter = size[-1:].strip().upper()
+    num = size[:-1]
+    try:
+        assert num.isdigit() and letter in symbols
+        num = float(num)
+        prefix = {symbols[0]:1}
+        for i, s in enumerate(symbols[1:]):
+            prefix[s] = 1 << (i+1)*10
+        return int(num * prefix[letter])  
+    except:
+        if DEBUG: print 'ERROR: (humanToSize) ',size,' no es traducible'
+        return False
         
 def Print(level,*args,**kwargs):
     if VERBOSE >= level:
@@ -278,6 +294,7 @@ class Log(object):
         self.fUsersDone = open(session.tardir+'/users.done','w')
         self.fUsersFailed = open(session.tardir+'/users.failed','w')
         self.fUsersRollback = open(session.tardir+'/users.rollback','w')
+        self.fUsersSkipped = open(session.tardir+'/users.skipped','w')
         self.fLogfile = open(session.tardir+'/logfile','w')
         self.fUsersList = open(session.tardir+'/users.list','w')
         
@@ -292,6 +309,10 @@ class Log(object):
     def writeRollback(self,string):
         self.fUsersRollback.writelines(string+"\n")
         self.fUsersRollback.flush()
+
+    def writeSkipped(self,string):
+        self.fUsersSkipped.writelines(string+"\n")
+        self.fUsersSkipped.flush()
 
     def writeLog(self,string):
         self.fLogfile.write(string+"\n")
@@ -349,6 +370,7 @@ class Session(object):
         self.abortDecrease = ABORTDECREASE
         self.abortAlways = ABORTALWAYS
         self.abortInSeverity = ABORTINSEVERITY
+        self.maxSize = MAXSIZE
         
     def getaccountList(self):
         if TEST:
@@ -380,7 +402,11 @@ class Session(object):
                 user = User(account)
                 self.userList.append(user) 
         #Proceso las entradas
+        skip = False
         for user in self.userList:
+            if skip:
+                self.log.writeSkipped()
+                continue
             #Chequeamos ...
             if user.check() is False:
                 if not self.die(user,False):continue
@@ -404,6 +430,10 @@ class Session(object):
             if self.abortCount < 0: self.abortCount = 0
             if DEBUG: self.log.writeLog('DEBUG: (session.start) abortCount: '+self.abortCount)                
             self.log.writeDone(user.cuenta)
+            #Controlamos si hemos llegado al tamaño maximo
+            if MAXSIZE > 0:
+                if self.tarsizes > MAXSIZE:
+                    skip = True
         Print(1,'Tamaño de tars de la session ',self.sessionId,' es ',sizeToHuman(self.tarsizes))
         
 class Storage(object):
@@ -806,6 +836,13 @@ class shell(cmd.Cmd):
         usuario = User(line)
         ret = usuario.insertDN( config.TARDIR)
         if ret is False: print 'ERROR INSERTANDO DN'
+    
+    def do_human2size(self,line):
+        ret = humanToSize(line)
+        if ret:
+            print ret
+        else:
+            print line,' no es traducible'
         
     def __init__(self):
         cmd.Cmd.__init__(self)
@@ -818,6 +855,7 @@ import argparse
 
 parser = argparse.ArgumentParser(description='Siguclean 0.1',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('-n','--sessionname',help='Nombre de sesion',required=False)
+parser.add_argument('-p','--altrootprefix',help='Prefijo para carpetas alternativas',dest='ALTROOTPREFIX',action='store',default='')
 parser.add_argument('-i','--interactive',help='Iniciar sesion interativa',action='store_true')
 parser.add_argument('-a','--abortalways',help='Abortar siempre ante un error inesperado',dest='ABORTALWAYS',action='store_true',default='False')
 parser.add_argument('-d','--abortdecrease',help='Decrementar la cuenta de errores cuando se produzca un exito en el archivado',dest='ABORTDECREASE',action='store_true',default='False')
@@ -825,6 +863,7 @@ parser.add_argument('-s','--abortinseverity',help='Abortar si se produce un erro
 parser.add_argument('-l','--abortlimit',help='Limite de la cuenta de errores para abortar (0 para no abortar nunca)',dest='ABORTLIMIT',action='store',default='5')
 parser.add_argument('-f','--from',help='Seleccionar usuarios desde esta fecha',dest='fromDate')
 parser.add_argument('-t','--to',help='Seleccionar usuarios hasta esta fecha',dest='toDate')
+parser.add_argument('-m','--maxsize',help='Limite de tamaño del archivado (0 sin limite)',dest='MAXSIZE',action='store',default='0')
 parser.add_argument('--test',help='Para usar solo en el peirodo de pruebas',dest='TEST',action='store_true')
 parser.add_argument('--debug',help='Imprimir mensajes de depuracion',dest='DEBUG',action='store_true')
 parser.add_argument('-v','--verbosity',help='Incrementa el detalle de los mensajes',action='count')
