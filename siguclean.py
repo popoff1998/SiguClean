@@ -853,16 +853,16 @@ Programa principal
 """
 import argparse
 
-parser = argparse.ArgumentParser(description='Siguclean 0.1',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('-n','--sessionname',help='Nombre de sesion',required=False)
-parser.add_argument('-p','--altrootprefix',help='Prefijo para carpetas alternativas',dest='ALTROOTPREFIX',action='store',default='')
+parser = argparse.ArgumentParser(description='Siguclean 0.1: Utilidad para borrar storages de usuarios',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument('-n','--sessionname',help='Nombre de sesion',dest='sessionId',action='store',default=None)
+parser.add_argument('-p','--altrootprefix',help='Prefijo para carpetas alternativas',dest='ALTROOTPREFIX',action='store',default=None)
 parser.add_argument('-i','--interactive',help='Iniciar sesion interativa',action='store_true')
 parser.add_argument('-a','--abortalways',help='Abortar siempre ante un error inesperado',dest='ABORTALWAYS',action='store_true',default='False')
 parser.add_argument('-d','--abortdecrease',help='Decrementar la cuenta de errores cuando se produzca un exito en el archivado',dest='ABORTDECREASE',action='store_true',default='False')
 parser.add_argument('-s','--abortinseverity',help='Abortar si se produce un error con severidad',dest='ABORTINSEVERITY',action='store_true',default='False')
 parser.add_argument('-l','--abortlimit',help='Limite de la cuenta de errores para abortar (0 para no abortar nunca)',dest='ABORTLIMIT',action='store',default='5')
-parser.add_argument('-f','--from',help='Seleccionar usuarios desde esta fecha',dest='fromDate')
-parser.add_argument('-t','--to',help='Seleccionar usuarios hasta esta fecha',dest='toDate')
+parser.add_argument('-f','--from',help='Seleccionar usuarios desde esta fecha',dest='fromDate',action='store',default=None)
+parser.add_argument('-t','--to',help='Seleccionar usuarios hasta esta fecha',dest='toDate',action='store',default=None)
 parser.add_argument('-m','--maxsize',help='Limite de tamaño del archivado (0 sin limite)',dest='MAXSIZE',action='store',default='0')
 parser.add_argument('--test',help='Para usar solo en el peirodo de pruebas',dest='TEST',action='store_true')
 parser.add_argument('--debug',help='Imprimir mensajes de depuracion',dest='DEBUG',action='store_true')
@@ -883,7 +883,7 @@ for var in args.__dict__:
             if DEBUG: print 'existe ',var,' y es ',vars(args)[var]
             globals()[var] = vars(args)[var]
     
-print 'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE
+print 'sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE
 
 
 
