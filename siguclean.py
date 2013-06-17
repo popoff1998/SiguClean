@@ -8,14 +8,15 @@ Created on Mon May 20 09:09:42 2013
 #from __future__ import print_function
 
 #Defines
-TEST = True
+TEST = False
 DEBUG = True
 VERBOSE = 1
+DRYRUN = False
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
 #LDAP_SERVER = "ldap://ldap1.priv.uco.es"
-LDAP_SERVER = "ldaps://sunsrv.uco.es"
+LDAP_SERVER = "ldaps://ucoapp08.uco.es"
 BIND_DN = "Administrador@uco.es"
 USER_BASE = "dc=uco,dc=es"
 ORACLE_SERVER='ibmblade47/av10g'
@@ -45,7 +46,7 @@ if TEST:
 else:
     MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'INSTALACIONES','mandatory':True,'val':''},
               {'account':'MAIL','fs':'homemail','label':'INSTALACIONES','mandatory':False,'val':''},  
-              {'account':'WINDOWS','fs':'perfiles','label':'PERFILES$','mandatory':False,'val':''},  
+              {'account':'WINDOWS','fs':'perfiles','label':'PERFILES','mandatory':False,'val':''},  
               {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})
 
     sessionId = ""
@@ -97,8 +98,8 @@ def CheckModules():
         import ldap
         Print(1,"CORRECTO")
     except:
-        print(0,"ERROR: No existe el modulo python-ldap, instalelo")
-        exit
+        print(0,"ABORT: No existe el modulo python-ldap, instalelo")
+        exit(False)
 
     #cx_Oracle
     Print(1,'     comprobando modulo conexion a Oracle ... ',end='')    
@@ -107,13 +108,13 @@ def CheckModules():
         import cx_Oracle
         Print(1,"CORRECTO")
     except:
-        print('ERROR: No existe el modulo cx_Oracle, instalelo')
-        exit
+        print('ABORT: No existe el modulo cx_Oracle, instalelo')
+        exit(False)
     
 def CheckConnections():
     "Establece las conexiones a ldap y oracle"
     Print(1,"  Comprobando conexiones")
-
+    import ldap,cx_Oracle
     #LDAP
     global WINDOWS_PASS
     WINDOWS_PASS = raw_input('     Introduzca la clave de windows (administrador):')
@@ -170,6 +171,7 @@ def CheckMounts():
             Print(1,"NO ACCESIBLE")
             salgo = True
     if salgo:
+        Print(0,'ABORT: Algunos puntos de montaje no estan accesibles')
         exit(False)
 
 def inputParameter(param,text,mandatory):
@@ -185,7 +187,7 @@ def inputParameter(param,text,mandatory):
             continue
         else:
             return param
-            
+          
 def EnterParameters():
     "Lee por teclado los parametros de ejecucion"
     while True:
@@ -225,7 +227,7 @@ def sizeToHuman(size):
     symbols = ('B','K','M','G','T')
     indice = 0
     while(True):
-        if DEBUG: print "DEBUG: (sizeToHuman) Size antes de redondear es: ",size 
+        if DEBUG: print "DEBUG-INFO: (sizeToHuman) Size antes de redondear es: ",size 
         if size < 1024:
             string = str(size)+symbols[indice]
             return string
@@ -244,10 +246,13 @@ def humanToSize(size):
             prefix[s] = 1 << (i+1)*10
         return int(num * prefix[letter])  
     except:
-        if DEBUG: print 'ERROR: (humanToSize) ',size,' no es traducible'
+        if DEBUG: print 'DEBUG-ERROR: (humanToSize) ',size,' no es traducible'
         return False
         
 def Print(level,*args,**kwargs):
+    global VERBOSE
+    if not VERBOSE: VERBOSE = 0
+    
     if VERBOSE >= level:
         if kwargs != {}:
             trail = kwargs['end']
@@ -258,6 +263,8 @@ def Print(level,*args,**kwargs):
         print(trail),
         
 def dnFromUser(user):
+    import ldap 
+    
     filtro = "(&(CN="+user+")(!(objectClass=contact)))"  
     try:
         result_id = ldapCon.search(USER_BASE,
@@ -276,7 +283,7 @@ def getListByDate(toDate , fromDate='1900-01-01'):
                        '\',\'yyyy-mm-dd\') AND to_date(\''+ toDate +\
                        '\',\'yyyy-mm-dd\')'
     query = Q_GET_BORRABLES + ' AND ' + Q_BETWEEN_DATES
-    if DEBUG: print("DEBUG: (getListByDate) Query:",query)
+    if DEBUG: print("DEBUG-INFO: (getListByDate) Query:",query)
     cursor = oracleCon.cursor()
     cursor.execute(query)     
     tmpList = cursor.fetchall()
@@ -371,6 +378,11 @@ class Session(object):
         self.abortAlways = ABORTALWAYS
         self.abortInSeverity = ABORTINSEVERITY
         self.maxSize = MAXSIZE
+        #Comprobamos los parametros para poder ejecutar
+        if not self.sessionId: raise ValueError
+        if not self.fromDate: self.fromDate = '1900-01-01'
+        if not self.toDate: self.toDate = '2100-01-01'
+        Print(0,'Procesando la sesion ',self.sessionId,' desde ',self.fromDate,' hasta ',self.toDate)
         
     def getaccountList(self):
         if TEST:
@@ -380,7 +392,7 @@ class Session(object):
     
     def start(self):
         #Directorio para TARS
-        if DEBUG: print 'DEBUG: (session.start) config.TARDIR es: ',config.TARDIR
+        if DEBUG: print 'DEBUG-INFO: (session.start) config.TARDIR es: ',config.TARDIR
         if os.path.exists(config.TARDIR):            
             if self.sessionId:            
                 self.tardir = config.TARDIR + '/' + self.sessionId
@@ -405,7 +417,7 @@ class Session(object):
         skip = False
         for user in self.userList:
             if skip:
-                self.log.writeSkipped()
+                self.log.writeSkipped(user.cuenta)
                 continue
             #Chequeamos ...
             if user.check() is False:
@@ -428,12 +440,13 @@ class Session(object):
                         user.borraCuentaWindows()                        
                         continue
             #Escribimos el registro de usuario archivado
-            if user.insertArchiveRecord() is False:
-                if not self.die(user,True): continue
+            if not DRYRUN:
+                if user.insertArchiveRecord() is False:
+                    if not self.die(user,True): continue
             #Si hemos llegado aquí todo esta OK
             if ABORTDECREASE is True: self.abortCount = self.abortCount -1
             if self.abortCount < 0: self.abortCount = 0
-            if DEBUG: self.log.writeLog('DEBUG: (session.start) abortCount: '+self.abortCount)                
+            if DEBUG: self.log.writeLog('DEBUG-INFO: (session.start) abortCount: '+str(self.abortCount))                
             self.log.writeDone(user.cuenta)
             #Controlamos si hemos llegado al tamaño maximo
             if MAXSIZE > 0:
@@ -452,7 +465,7 @@ class Storage(object):
         self.parent = parent
         self.tarsize = 0
         self.state = state.NA
-        self.accesible = self.exist()
+        #self.accesible = self.exist()
         
     def display(self):
         Print(1,self.key,"\t = ",self.path,"\t Accesible: ",self.accesible,"\t Estado: ",self.state)
@@ -466,6 +479,7 @@ class Storage(object):
         self.tarpath = rootpath + '/' + self.parent.cuenta + '_' + self.key + '_' + sessionId + ".tar"
         Print(1,"Archiving ",self.key," from ",self.path," in ",self.tarpath," ... ")
         try:
+            if DRYRUN: return True
             tar = tarfile.open(self.tarpath,"w:bz2")
             tar.add(self.path)
             tar.close()
@@ -480,10 +494,12 @@ class Storage(object):
     def delete(self):
         "Borra un storage"
         #Primero tengo que controlar si no existe y no es mandatory
+        if DEBUG: print "DEBUG-INFO: (storage.delete) ",self.key," en ",self.path
         if self.exist() is False and self.mandatory is False:
             self.state = state.NOACCESIBLE
             return True
         try:        
+            if DRYRUN: return True
             rmtree(self.path)
             if self.link is not None:
                 os.remove(self.link)
@@ -498,20 +514,22 @@ class Storage(object):
         - Si se ha borrado hacemos un untar
         - Borramos el tar
         - Ponemos el state como rollback"""
-        if DEBUG: Pprint('DEBUG: (storage.rollback)',self.__dict__)
+        if DEBUG: Pprint('DEBUG-INFO: (storage.rollback)',self.__dict__)
         if self.state == state.DELETED or self.state == state.DELETEERROR:
             if self.unarchive() is False:
                 self.state = state.ERROR
                 return False
             #Restauro el link si existe
             if self.link is not None:
-                os.link(self.link,self.path)
+                if not DRYRUN:
+                    os.link(self.link,self.path)
         try:
             #Si no está archivado no hay que borrar el tar
             if self.state not in (state.ARCHIVED,state.TARFAIL): 
-                if DEBUG: print "INFO: (storage.rollback) No hago rollback de ",self.key," no estaba archivado"                
+                if DEBUG: print "DEBUG-INFO: (storage.rollback) No hago rollback de ",self.key," no estaba archivado"                
                 return True
             #Borramos el tar
+            if DRYRUN: return True            
             os.remove(self.tarpath)
             self.tarpath = None
             self.tarsize = 0
@@ -526,6 +544,7 @@ class Storage(object):
         if self.state == state.DELETED or self.state == state.ARCHIVED:
             try:
                 Print(1,"Unarchiving ",self.key," to ",self.path," from ",self.tarpath," ... ")                
+                if DRYRUN: return True                
                 tar = tarfile.open(self.tarpath,"r:*")
                 tar.extractall(self.path)
                 tar.close()
@@ -542,30 +561,37 @@ class Storage(object):
         if os.path.exists(self.path):
             self.accesible = True
             return True
-        if DEBUG: print "No existe path directo para ",self.path," busco alternativo"            
         #Aun no existiendo puede estar en un directorio movido, lo buscamos
         parentdir = os.path.dirname(self.path)
         basename = os.path.basename(self.path)
+        #Nos aseguramos de que si ya hemos buscado y no hay alternativos salir
+        if parentdir in config.altdirs and not config.altdirs[parentdir]:
+            if DEBUG: print "DEBUG-WARNING: User:",self.parent.cuenta," No existe path directo ni alternativo para ",self.key," en ",parentdir
+            self.accesible = False
+            return False
+        if DEBUG: print "DEBUG-INFO: User:",self.parent.cuenta," No existe path directo para ",self.key," en ",self.path," busco alternativo ..."            
         #Buscamos en directorios alternativos del parentdir
         #esta busqueda puede ser gravosa si se debe repetir para cada usuario por
         #lo que una vez averiguados los alternativos se deben de almacenar globalmente
         if not parentdir in config.altdirs: 
-            if DEBUG: print "INFO: No existe ",parentdir," construyo la lista alternativa"
+            if DEBUG: print "DEBUG-INFO: No he construido aun la lista alternativa para ",self.key," en ",parentdir," lo hago ahora ..."
             config.altdirs[parentdir] = [s for s in os.listdir(parentdir) 
                                         if s.startswith(ALTROOTPREFIX)] 
         #Si la lista esta vacia salimos directamente
         if not config.altdirs[parentdir]:
-            if DEBUG: print "INFO: No existem directorios alternativos para ",parentdir 
+            if DEBUG: print "DEBUG-WARNING: No existen directorios alternativos para ",self.key," en ",parentdir 
+            self.accesible = False
             return False
         #Buscamos si existe en cualquiera de los directorios alternativos
         for path in config.altdirs[parentdir]:
             joinpath = os.path.join(path,basename)
             if os.path.exists(joinpath):
-                if DEBUG: print "INFO: encontrado alternativo para ",joinpath
+                if DEBUG: print "DEBUG-INFO: User:",self.parent.cuenta," encontrado alternativo para ",self.key," en ",joinpath
                 self.path = joinpath
                 self.accesible = True
                 return True
         #Si llegamos aqui es que no existe
+        self.accesible = False
         return False
         
 class User(object):
@@ -586,7 +612,7 @@ class User(object):
             if storage.mandatory:
                 if storage.exist() is False:
                     status = False
-                    if DEBUG: print "DEBUG: (user.check) NO DEBO ENTRAR AQUI SI MANDATORY ES FALSE O EL STORAGE EXISTE"
+                    if DEBUG: print "DEBUG-WARNING: (user.check) NO DEBO ENTRAR AQUI SI MANDATORY ES FALSE O EL STORAGE EXISTE"
         return status
         
     def borraCuentaWindows(self):
@@ -605,7 +631,7 @@ class User(object):
     def __init__(self,cuenta):
         try:
             dummy = self.cuenta
-            if DEBUG: print "DEBUG: (user.__init__) YA EXISTIA USUARIO ",self.cuenta, " VUELVO DE INIT"
+            if DEBUG: print "DEBUG-WARNING: (user.__init__) YA EXISTIA USUARIO ",self.cuenta, " VUELVO DE INIT"
             return
         except:
             pass
@@ -647,7 +673,7 @@ class User(object):
             if ret is True: 
                 continue
             else:
-                if DEBUG: print "ERROR: (user.deleteStorage) user ",self.cuenta                
+                if DEBUG: print "DEBUG-ERROR: (user.deleteStorage) user ",self.cuenta                
                 return False
         return True
         
@@ -697,7 +723,7 @@ class User(object):
         
         for storage in self.storage:
             ret = storage.archive(self.rootpath)
-            if DEBUG: print "INFO: (user.archive) mandatory de ",storage.key," es ",storage.mandatory
+            if DEBUG: print "DEBUG-INFO: (user.archive) mandatory de ",storage.key," es ",storage.mandatory
             if ret is False and storage.mandatory is True: break
             ret = True
             self.tarsizes = self.tarsizes + storage.tarsize
@@ -706,7 +732,8 @@ class User(object):
             self.rollback()
             try:
                  #Borramos el directorio padre
-                 os.rmdir(self.rootpath)
+                 if not DRYRUN:
+                     os.rmdir(self.rootpath)
             except:
                 Print(0,'ABORT: No puedo borrar tar rootdir para ',self.cuenta,' ... abortando')
                 exit(False)
@@ -719,6 +746,7 @@ class User(object):
         #Vemos si rootpath existe
         if not self.rootpath: self.getRootpath(tardir)
         try:
+            if DRYRUN: return True            
             adFile = open(self.rootpath+'/'+self.cuenta+'.dn','w')
             pickle.dump(self.adObject,adFile)
             adFile.close()
@@ -728,9 +756,11 @@ class User(object):
             
     def deleteDN(self):
         "Borra el dn del usuario"
+        import ldap
         Print(1,'Borrando DN: ',self.dn)
         if self.dn is not None:
             try:            
+                if DRYRUN: return True
                 ldapCon.delete_s(self.dn)                
                 return True
             except ldap.LDAPError, e:
@@ -739,6 +769,8 @@ class User(object):
     
     def insertDN(self,tardir):
         "Como no es posible recuperar el SID no tiene sentido usarla"
+        import ldap 
+        
         if not self.rootpath: self.getRootpath(tardir)        
 
         if self.dn is None:
@@ -749,8 +781,8 @@ class User(object):
                 item = self.adObject[0]
                 dn = item[0]
                 atributos = item[1]
-                if DEBUG: print "DEBUG: (user.insertDN) DN:",dn
-                if DEBUG: print "DEBUG: (user.insertDN) AT:",atributos
+                if DEBUG: print "DEBUG-INFO: (user.insertDN) DN:",dn
+                if DEBUG: print "DEBUG-INFO: (user.insertDN) AT:",atributos
 
                 attrs=[]
                 attrList = [ "cn", "countryCode", "objectClass", "userPrincipalName", "info", "name", "displayName", "givenName", "sAMAccountName" ]
@@ -758,8 +790,9 @@ class User(object):
                    if attr in attrList:
                       attrs.append( (attr, atributos[attr]))
 
-                if DEBUG: Pprint("DEBUG: (user.insertDN) ==== ATTRS ====",attrs)
-                ldapCon.add_s( dn, attrs)
+                if DEBUG: Pprint("DEBUG-INFO: (user.insertDN) ==== ATTRS ====",attrs)
+                if not DRYRUN:                
+                    ldapCon.add_s( dn, attrs)
                 adFile.close()
                 return True
             except ldap.LDAPError, e:
@@ -879,12 +912,14 @@ parser.add_argument('-t','--to',help='Seleccionar usuarios hasta esta fecha',des
 parser.add_argument('-m','--maxsize',help='Limite de tamaño del archivado (0 sin limite)',dest='MAXSIZE',action='store',default='0')
 parser.add_argument('--test',help='Para usar solo en el peirodo de pruebas',dest='TEST',action='store_true')
 parser.add_argument('--debug',help='Imprimir mensajes de depuracion',dest='DEBUG',action='store_true')
+parser.add_argument('--dry-run',help='No realiza ninguna operacion de escritura critica',dest='DRYRUN',action='store_true')
 parser.add_argument('-v','--verbosity',help='Incrementa el detalle de los mensajes',action='count')
 
 
 args = parser.parse_args()
 
 VERBOSE = args.verbosity
+print 'verbose es: ',VERBOSE
 
 if args.interactive:
     shell().cmdloop()
@@ -893,12 +928,19 @@ if args.interactive:
 for var in args.__dict__:
     if var in globals().keys():
         if vars(args)[var] is not None:
-            if DEBUG: print 'existe ',var,' y es ',vars(args)[var]
+            if args.DEBUG: print 'DEBUG-INFO: existe ',var,' y es ',vars(args)[var]
             globals()[var] = vars(args)[var]
     
-print 'sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE
+if DEBUG: print 'DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE
 
-
+try:
+    sesion = Session(sessionId,fromDate,toDate)
+except:
+    Print(0,'ABORT: No se ha dado nombre a la sesion')
+    exit(False)
+CheckEnvironment()
+print config.status
+sesion.start()
 
 
 
