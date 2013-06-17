@@ -424,7 +424,12 @@ class Session(object):
                     if not self.die(user,False): continue
                 #... y borramos el DN            
                 if user.deleteDN() is False:
-                    if not self.die(user,False): continue
+                    if not self.die(user,False):
+                        user.borraCuentaWindows()                        
+                        continue
+            #Escribimos el registro de usuario archivado
+            if user.insertArchiveRecord() is False:
+                if not self.die(user,True): continue
             #Si hemos llegado aquí todo esta OK
             if ABORTDECREASE is True: self.abortCount = self.abortCount -1
             if self.abortCount < 0: self.abortCount = 0
@@ -583,6 +588,14 @@ class User(object):
                     status = False
                     if DEBUG: print "DEBUG: (user.check) NO DEBO ENTRAR AQUI SI MANDATORY ES FALSE O EL STORAGE EXISTE"
         return status
+        
+    def borraCuentaWindows(self):
+        "Borra la cuenta windows de la BBDD sigu"
+        return True
+        
+    def insertArchiveRecord(self):
+        "Inserta el registro de archivado en la BBDD sigu"
+        return True
         
     def listCuentas(self):
         "Devuelve una tupla con las cuentas que tiene el usuario"
