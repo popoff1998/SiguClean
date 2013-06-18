@@ -44,7 +44,7 @@ if TEST:
     MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFSTEST','mandatory':True,'val':''},
               {'account':'MAIL','fs':'homemail','label':'NEWMAILTEST','mandatory':False,'val':''})  
 else:
-    MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'INSTALACIONES','mandatory':True,'val':''},
+    MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFSTEST','mandatory':True,'val':''},
               {'account':'MAIL','fs':'homemail','label':'INSTALACIONES','mandatory':False,'val':''},  
               {'account':'WINDOWS','fs':'perfiles','label':'PERFILES','mandatory':False,'val':''},  
               {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})
@@ -362,6 +362,7 @@ class Session(object):
             else:
                 self.log.writeFailed(user.cuenta)
                 self.abort(True)
+        self.log.writeFailed(user.cuenta)
         return False
             
     def __init__(self,sessionId,fromDate,toDate):
@@ -386,7 +387,7 @@ class Session(object):
         
     def getaccountList(self):
         if TEST:
-            self.accountList = ['games','news','uucp']
+            self.accountList = ['games','news','uucp','pepe']
         else:
             self.acountlist = getListByDate(self.toDate,self.fromDate)
     
@@ -420,6 +421,7 @@ class Session(object):
                 self.log.writeSkipped(user.cuenta)
                 continue
             #Chequeamos ...
+            if DEBUG: print "DEBUG: *** PROCESANDO USUARIO ",user.cuenta," ***"
             if user.check() is False:
                 if not self.die(user,False):continue
             #... Archivamos ...
@@ -465,7 +467,7 @@ class Storage(object):
         self.parent = parent
         self.tarsize = 0
         self.state = state.NA
-        #self.accesible = self.exist()
+        self.accesible = None
         
     def display(self):
         Print(1,self.key,"\t = ",self.path,"\t Accesible: ",self.accesible,"\t Estado: ",self.state)
@@ -495,7 +497,7 @@ class Storage(object):
         "Borra un storage"
         #Primero tengo que controlar si no existe y no es mandatory
         if DEBUG: print "DEBUG-INFO: (storage.delete) ",self.key," en ",self.path
-        if self.exist() is False and self.mandatory is False:
+        if self.accesible is False and self.mandatory is False:
             self.state = state.NOACCESIBLE
             return True
         try:        
@@ -584,7 +586,7 @@ class Storage(object):
             return False
         #Buscamos si existe en cualquiera de los directorios alternativos
         for path in config.altdirs[parentdir]:
-            joinpath = os.path.join(path,basename)
+            joinpath = os.path.join(parentdir,path,basename)
             if os.path.exists(joinpath):
                 if DEBUG: print "DEBUG-INFO: User:",self.parent.cuenta," encontrado alternativo para ",self.key," en ",joinpath
                 self.path = joinpath
@@ -609,10 +611,10 @@ class User(object):
         Asumo que la DN está bien porque acabo de buscarla."""
         status = True
         for storage in self.storage:
-            if storage.mandatory:
-                if storage.exist() is False:
-                    status = False
-                    if DEBUG: print "DEBUG-WARNING: (user.check) NO DEBO ENTRAR AQUI SI MANDATORY ES FALSE O EL STORAGE EXISTE"
+            if not storage.exist() and storage.mandatory:
+                status = False
+                if DEBUG: print "DEBUG-WARNING: (user.check) El usuario ",self.cuenta," no ha pasado el chequeo"
+                break
         return status
         
     def borraCuentaWindows(self):
@@ -673,7 +675,7 @@ class User(object):
             if ret is True: 
                 continue
             else:
-                if DEBUG: print "DEBUG-ERROR: (user.deleteStorage) user ",self.cuenta                
+                if DEBUG: print "DEBUG-ERROR: (user.deleteStorage) user:",self.cuenta," Storage: ",storage.key
                 return False
         return True
         

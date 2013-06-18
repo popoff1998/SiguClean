@@ -50,3 +50,4 @@ status=Status(["oracleCon",
 TARDIR = '/tmp'
 
 parentdir = {}
+altdirs = {}
