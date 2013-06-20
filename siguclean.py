@@ -226,8 +226,8 @@ def imprime(userList):
 def sizeToHuman(size):
     symbols = ('B','K','M','G','T')
     indice = 0
+    if DEBUG: print "DEBUG-INFO: (sizeToHuman) Size antes de redondear es: ",size 
     while(True):
-        if DEBUG: print "DEBUG-INFO: (sizeToHuman) Size antes de redondear es: ",size 
         if size < 1024:
             string = str(size)+symbols[indice]
             return string
@@ -338,11 +338,11 @@ class Session(object):
             self.log.writeLog('ABORT: No abortamos porque ABORTLIMIT es 0')
             return
                 
-        if ABORTALWAYS is True:
+        if ABORTALWAYS:
             self.log.writeLog('ABORT: Error y ABORTALWAYS es verdadero')
             exit(False)
 
-        if ABORTINSEVERITY is True and severity is True:
+        if ABORTINSEVERITY and severity:
             self.log.writeLog('ABORT: Error con severidad y ABORTINSEVERITY es verdadero')
             exit(False)
             
@@ -354,9 +354,8 @@ class Session(object):
         
     def die(self,user,rollback):
         "Funcion que controla si abortamos o no y gestiona los logs"
-        if rollback is True:
-            ret = user.rollback()
-            if ret is True:
+        if rollback:
+            if user.rollback():
                 self.log.writeRollback(user.cuenta)
                 self.abort(False)
             else:
@@ -397,7 +396,7 @@ class Session(object):
         if os.path.exists(config.TARDIR):            
             if self.sessionId:            
                 self.tardir = config.TARDIR + '/' + self.sessionId
-            if os.path.isdir(self.tardir) is False:
+            if not os.path.isdir(self.tardir):
                 os.mkdir(self.tardir,0777)
         else:
             #Abortamos porque no existe el directorio padre de los tars
@@ -422,31 +421,31 @@ class Session(object):
                 continue
             #Chequeamos ...
             if DEBUG: print "DEBUG: *** PROCESANDO USUARIO ",user.cuenta," ***"
-            if user.check() is False:
+            if not user.check():
                 if not self.die(user,False):continue
             #... Archivamos ...
-            if user.archive(self.tardir) is False:
+            if not user.archive(self.tardir):
                 if not self.die(user,True): continue
             self.tarsizes = self.tarsizes + user.tarsizes
             #... Borramos storage ...
-            if user.deleteStorage() is False:
+            if not user.deleteStorage():
                 if not self.die(user,True): continue
             #Lo siguiente solo lo hacemos si tiene cuenta windows
             if 'WINDOWS' in user.cuentas:
                 #... Almacenamos el DN ...
-                if user.archiveDN(self.tardir) is False:
+                if not user.archiveDN(self.tardir):
                     if not self.die(user,False): continue
                 #... y borramos el DN            
-                if user.deleteDN() is False:
+                if not user.deleteDN():
                     if not self.die(user,False):
                         user.borraCuentaWindows()                        
                         continue
             #Escribimos el registro de usuario archivado
             if not DRYRUN:
-                if user.insertArchiveRecord() is False:
+                if not user.insertArchiveRecord():
                     if not self.die(user,True): continue
             #Si hemos llegado aquí todo esta OK
-            if ABORTDECREASE is True: self.abortCount = self.abortCount -1
+            if ABORTDECREASE: self.abortCount = self.abortCount -1
             if self.abortCount < 0: self.abortCount = 0
             if DEBUG: self.log.writeLog('DEBUG-INFO: (session.start) abortCount: '+str(self.abortCount))                
             self.log.writeDone(user.cuenta)
@@ -475,13 +474,19 @@ class Storage(object):
     def archive(self,rootpath):
         """ Archiva un storage en un tar"""
         #Vuelvo a comprobar aqui que es accesible
-        if self.accesible is False:
+        if not self.accesible:
             self.state = state.NOACCESIBLE
             return False
         self.tarpath = rootpath + '/' + self.parent.cuenta + '_' + self.key + '_' + sessionId + ".tar"
         Print(1,"Archiving ",self.key," from ",self.path," in ",self.tarpath," ... ")
         try:
-            if DRYRUN: return True
+            if DRYRUN: 
+                #Calculo el tamaño sin comprimir y creo un fichero vacio para la simulacion                
+                f = open(self.tarpath,"w")
+                f.close()
+                self.tarsize = os.lstat(self.tarpath).st_size                
+                self.state = state.ARCHIVED                
+                return True
             tar = tarfile.open(self.tarpath,"w:bz2")
             tar.add(self.path)
             tar.close()
@@ -497,11 +502,13 @@ class Storage(object):
         "Borra un storage"
         #Primero tengo que controlar si no existe y no es mandatory
         if DEBUG: print "DEBUG-INFO: (storage.delete) ",self.key," en ",self.path
-        if self.accesible is False and self.mandatory is False:
+        if not self.accesible and not self.mandatory:
             self.state = state.NOACCESIBLE
             return True
         try:        
-            if DRYRUN: return True
+            if DRYRUN: 
+                self.state = state.DELETED                
+                return True
             rmtree(self.path)
             if self.link is not None:
                 os.remove(self.link)
@@ -518,7 +525,7 @@ class Storage(object):
         - Ponemos el state como rollback"""
         if DEBUG: Pprint('DEBUG-INFO: (storage.rollback)',self.__dict__)
         if self.state == state.DELETED or self.state == state.DELETEERROR:
-            if self.unarchive() is False:
+            if not self.unarchive():
                 self.state = state.ERROR
                 return False
             #Restauro el link si existe
@@ -531,7 +538,6 @@ class Storage(object):
                 if DEBUG: print "DEBUG-INFO: (storage.rollback) No hago rollback de ",self.key," no estaba archivado"                
                 return True
             #Borramos el tar
-            if DRYRUN: return True            
             os.remove(self.tarpath)
             self.tarpath = None
             self.tarsize = 0
@@ -671,8 +677,7 @@ class User(object):
     def deleteStorage(self):
         "Borra todos los storages del usuario"
         for storage in self.storage:
-            ret = storage.delete()
-            if ret is True: 
+            if storage.delete():
                 continue
             else:
                 if DEBUG: print "DEBUG-ERROR: (user.deleteStorage) user:",self.cuenta," Storage: ",storage.key
@@ -695,17 +700,17 @@ class User(object):
             - Borrar los tars
         """
         for storage in self.storage:
-            if storage.rollback() is False:
+            if not storage.rollback():
                 return False
         return True
         
     def getRootpath(self,tardir):
-        if os.path.isdir(tardir) is False:
+        if not os.path.isdir(tardir):
             Print(0,"ABORT: (user-archive) No existe el directorio para TARS",tardir)
             exit(False)
 
         self.rootpath = tardir + '/' + self.cuenta
-        if os.path.isdir(self.rootpath) is False:
+        if not os.path.isdir(self.rootpath):
             os.mkdir(self.rootpath,0777)    
 
     def unarchive(self,tardir):
@@ -724,20 +729,21 @@ class User(object):
         if not self.rootpath: self.getRootpath(tardir)
         
         for storage in self.storage:
-            ret = storage.archive(self.rootpath)
-            if DEBUG: print "DEBUG-INFO: (user.archive) mandatory de ",storage.key," es ",storage.mandatory
-            if ret is False and storage.mandatory is True: break
-            ret = True
-            self.tarsizes = self.tarsizes + storage.tarsize
-        if ret is False:
+            if not storage.archive(self.rootpath) and storage.mandatory: 
+                if DEBUG: print "DEBUG-INFO: (user.archive) mandatory de ",storage.key," es ",storage.mandatory
+                ret = False
+                break
+            else:
+                ret = True
+                self.tarsizes = self.tarsizes + storage.tarsize
+        if not ret:
             Print(0,'WARNING: Error archivando usuario ',self.cuenta,' fs ',storage.key,' haciendo rollback')
             self.rollback()
             try:
                  #Borramos el directorio padre
-                 if not DRYRUN:
-                     os.rmdir(self.rootpath)
+                 os.rmdir(self.rootpath)
             except:
-                Print(0,'ABORT: No puedo borrar tar rootdir para ',self.cuenta,' ... abortando')
+                Print(0,'ABORT: No puedo borrar tar rootpath para ',self.cuenta,' ... abortando')
                 exit(False)
         else:            
             Print(2,'INFO: El tamaño de los tars para ',self.cuenta,' es: ',self.tarsizes)
@@ -748,7 +754,6 @@ class User(object):
         #Vemos si rootpath existe
         if not self.rootpath: self.getRootpath(tardir)
         try:
-            if DRYRUN: return True            
             adFile = open(self.rootpath+'/'+self.cuenta+'.dn','w')
             pickle.dump(self.adObject,adFile)
             adFile.close()
@@ -872,18 +877,18 @@ class shell(cmd.Cmd):
 
     def do_archivedn(self,line):
         usuario = User(line)
-        ret = usuario.archiveDN(config.TARDIR)
-        if ret is False: print 'ERROR ARCHIVANDO DN'
+        if not usuario.archiveDN(config.TARDIR):
+            print 'ERROR ARCHIVANDO DN'
         
     def do_deletedn(self,line):
         usuario = User(line)
-        ret = usuario.deleteDN()
-        if ret is False: print 'ERROR BORRANDO DN'
+        if not usuario.deleteDN():
+            print 'ERROR BORRANDO DN'
     
     def do_insertdn(self,line):
         usuario = User(line)
-        ret = usuario.insertDN( config.TARDIR)
-        if ret is False: print 'ERROR INSERTANDO DN'
+        if not usuario.insertDN( config.TARDIR):
+            print 'ERROR INSERTANDO DN'
     
     def do_human2size(self,line):
         ret = humanToSize(line)
