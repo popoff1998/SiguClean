@@ -357,6 +357,7 @@ class Log(object):
         self.fUsersDone = open(session.tardir+'/users.done','w')
         self.fUsersFailed = open(session.tardir+'/users.failed','w')
         self.fUsersRollback = open(session.tardir+'/users.rollback','w')
+        self.fUsersNoRollback = open(session.tardir+'/users.norollback','w')
         self.fUsersSkipped = open(session.tardir+'/users.skipped','w')
         self.fLogfile = open(session.tardir+'/logfile','w')
         self.fUsersList = open(session.tardir+'/users.list','w')
@@ -415,7 +416,7 @@ class Session(object):
                 self.log.writeRollback(user.cuenta)
                 self.abort(False)
             else:
-                self.log.writeFailed(user.cuenta)
+                self.log.writeNoRollback(user.cuenta)
                 self.abort(True)
         self.log.writeFailed(user.cuenta)
         return False
