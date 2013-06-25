@@ -297,6 +297,16 @@ def dnFromUser(user):
         status = False
     return status,dn,tupla,result_type
 
+def ldapFromSigu(cuenta,attr):
+    Q_LDAP_SIGU = 'select sigu.ldap.uf_leeldap(\''+cuenta+'\',\''+attr+'\') from dual'
+    
+    cursor = oracleCon.cursor()
+    cursor.execute(Q_LDAP_SIGU)     
+    tmpList = cursor.fetchall()
+    tmpList = tmpList[0][0]
+    print "tmplist = ",tmpList
+    return tmpList.strip().split(':')[1].strip() if tmpList else None
+    
 def getListByDate(toDate , fromDate='1900-01-01'):
     Q_BETWEEN_DATES = 'FCADUCIDAD  BETWEEN to_date(\''+ fromDate +\
                        '\',\'yyyy-mm-dd\') AND to_date(\''+ toDate +\
@@ -700,6 +710,10 @@ class User(object):
             pass
         self.dn = None
         self.cuenta = cuenta
+        if TEST:
+            self.homedir = cuenta
+        else:
+            self.homedir = os.path.basename(ldapFromSigu(cuenta,'homedirectory'))
         self.storage = []
         self.rootpath = ''
         self.cuentas = self.listCuentas()
@@ -711,7 +725,7 @@ class User(object):
                 if m['val'] is None:
                     continue
                 if c == m['account']:
-                    sto_path = m['val'] + '/' + self.cuenta
+                    sto_path = m['val'] + '/' + self.homedir
                     sto_key = m['fs']
                     #Si es un enlace lo sustituyo por el path real
                     if os.path.islink(sto_path):
@@ -719,6 +733,8 @@ class User(object):
                         sto_path = os.path.realpath(sto_path)
                     #Caso especial de WINDOWS (calcular dn)
                     if c == 'WINDOWS':
+                        #En el caso de windows el homedir es siempre la cuenta
+                        sto_path = m['val'] + '/' + self.cuenta
                         status,dn,result_type = dnFromUser(self.cuenta)
                         if status:
                             self.dn = dn
@@ -955,6 +971,9 @@ class shell(cmd.Cmd):
         global NTCHECK
         NTCHECK = line.split()[1]     
         print hasCuentaNT(line.split()[0])
+
+    def do_ldapfromsigu(self,line):
+        print ldapFromSigu(line.split()[0],line.split()[1])
         
     def __init__(self):
         cmd.Cmd.__init__(self)
