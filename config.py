@@ -51,3 +51,4 @@ TARDIR = '/tmp'
 
 parentdir = {}
 altdirs = {}
+session = None

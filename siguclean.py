@@ -15,6 +15,7 @@ DRYRUN = False
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
+Q_GET_CUENTA_NT = 'SELECT CCUENTA FROM UT_CUENTAS_NT WHERE CCUENTA ='
 #LDAP_SERVER = "ldap://ldap1.priv.uco.es"
 LDAP_SERVER = "ldaps://ucoapp08.uco.es"
 BIND_DN = "Administrador@uco.es"
@@ -22,6 +23,7 @@ USER_BASE = "dc=uco,dc=es"
 ORACLE_SERVER='ibmblade47/av10g'
 ALTROOTPREFIX = '0_'
 MAXSIZE = 0
+NTCHECK = 'ad'
 
 #Control del abort
 """
@@ -34,6 +36,7 @@ ABORTLIMIT      = 5
 ABORTDECREASE   = True
 ABORTALWAYS     = False
 ABORTINSEVERITY = False
+fDebug = None
 
 #PARAMETROS DE LA EJECUCION
 if TEST:
@@ -67,6 +70,7 @@ state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR
 
 #FUNCIONES
 import collections
+
 
 def iterable(obj):
     if isinstance(obj, collections.Iterable):
@@ -226,7 +230,7 @@ def imprime(userList):
 def sizeToHuman(size):
     symbols = ('B','K','M','G','T')
     indice = 0
-    if DEBUG: print "DEBUG-INFO: (sizeToHuman) Size antes de redondear es: ",size 
+    if DEBUG: Debug("DEBUG-INFO: (sizeToHuman) Size antes de redondear es: ",size )
     while(True):
         if size < 1024:
             string = str(size)+symbols[indice]
@@ -262,6 +266,21 @@ def Print(level,*args,**kwargs):
             print(string),
         print(trail),
         
+def Debug(*args,**kwargs):
+    global fDebug
+    if not fDebug:
+        fDebug = open(config.session.tardir+"/users.debug","w")
+    if kwargs != {}:
+        trail = kwargs['end']
+    else:
+        trail = '\n'
+    for string in args:
+        print(string),
+        fDebug.write(str(string))
+    print(trail),       
+    fDebug.write(trail)
+    fDebug.flush()
+    
 def dnFromUser(user):
     import ldap 
     
@@ -291,6 +310,33 @@ def getListByDate(toDate , fromDate='1900-01-01'):
     userList = [x[0] for x in tmpList]        
     config.status.userList = True
     return userList
+
+def hasCuentaNT(cuenta):
+    import ldap 
+    statAD = False
+    statSigu = False
+    
+    if NTCHECK == 'sigu' or NTCHECK == 'both':
+        query = Q_GET_CUENTA_NT + '\'' + cuenta + '\''
+        cursor = oracleCon.cursor()
+        cursor.execute(query)     
+        statSigu = cursor.fetchall()
+        
+    if NTCHECK == 'ad' or NTCHECK == 'both':
+        filtro = "(&(CN="+cuenta+")(!(objectClass=contact)))"  
+        try:
+            result_id = ldapCon.search(USER_BASE,
+                                ldap.SCOPE_SUBTREE,
+                                filtro,
+                                None)
+            result_type,tupla = ldapCon.result(result_id,1)
+            statAD = True
+        except:
+            statAD = False
+            
+    if NTCHECK == 'sigu': return True if statSigu else  False
+    if NTCHECK == 'ad': return statAD
+    return True if statAD and statSigu else  False
 
 #CLASES
 
@@ -365,6 +411,7 @@ class Session(object):
         return False
             
     def __init__(self,sessionId,fromDate,toDate):
+        config.session = self        
         self.sessionId = sessionId
         self.fromDate = fromDate
         self.toDate = toDate
@@ -392,7 +439,7 @@ class Session(object):
     
     def start(self):
         #Directorio para TARS
-        if DEBUG: print 'DEBUG-INFO: (session.start) config.TARDIR es: ',config.TARDIR
+        if DEBUG: Debug('DEBUG-INFO: (session.start) config.TARDIR es: ',config.TARDIR)
         if os.path.exists(config.TARDIR):            
             if self.sessionId:            
                 self.tardir = config.TARDIR + '/' + self.sessionId
@@ -420,7 +467,7 @@ class Session(object):
                 self.log.writeSkipped(user.cuenta)
                 continue
             #Chequeamos ...
-            if DEBUG: print "DEBUG: *** PROCESANDO USUARIO ",user.cuenta," ***"
+            if DEBUG: Debug("DEBUG: *** PROCESANDO USUARIO ",user.cuenta," ***")
             if not user.check():
                 if not self.die(user,False):continue
             #... Archivamos ...
@@ -632,10 +679,18 @@ class User(object):
         return True
         
     def listCuentas(self):
-        "Devuelve una tupla con las cuentas que tiene el usuario"
-        return ('LINUX','MAIL') #dummy return
-
+        """Devuelve una tupla con las cuentas que tiene el usuario
+        Por defecto tenemos correo y linux, para ver si tenemos windows
+        consultamos si existe en la tabla UT_CUENTAS_NT, en AD o en ambos"""
         
+        if TEST:                
+            return ('LINUX','MAIL') #dummy return
+        
+        if hasCuentaNT(self.cuenta):
+            return ("LINUX","MAIL","WINDOWS")
+        else:
+            return ("LINUX","MAIL")
+            
     def __init__(self,cuenta):
         try:
             dummy = self.cuenta
@@ -896,6 +951,10 @@ class shell(cmd.Cmd):
             print ret
         else:
             print line,' no es traducible'
+    def do_hascuentant(self,line):
+        global NTCHECK
+        NTCHECK = line.split()[1]     
+        print hasCuentaNT(line.split()[0])
         
     def __init__(self):
         cmd.Cmd.__init__(self)
@@ -917,6 +976,7 @@ parser.add_argument('-l','--abortlimit',help='Limite de la cuenta de errores par
 parser.add_argument('-f','--from',help='Seleccionar usuarios desde esta fecha',dest='fromDate',action='store',default=None)
 parser.add_argument('-t','--to',help='Seleccionar usuarios hasta esta fecha',dest='toDate',action='store',default=None)
 parser.add_argument('-m','--maxsize',help='Limite de tamaño del archivado (0 sin limite)',dest='MAXSIZE',action='store',default='0')
+parser.add_argument('-w','--windows-check',help='Metodo de comprobacion de existencia de cuenta windows',choices=['ad','sigu','both'],dest='NTCHECK',action='store',default='ad')
 parser.add_argument('--test',help='Para usar solo en el peirodo de pruebas',dest='TEST',action='store_true')
 parser.add_argument('--debug',help='Imprimir mensajes de depuracion',dest='DEBUG',action='store_true')
 parser.add_argument('--dry-run',help='No realiza ninguna operacion de escritura critica',dest='DRYRUN',action='store_true')
@@ -928,8 +988,6 @@ args = parser.parse_args()
 VERBOSE = args.verbosity
 print 'verbose es: ',VERBOSE
 
-if args.interactive:
-    shell().cmdloop()
 
 #Si no es interactiva ponemos los valores a las globales
 for var in args.__dict__:
@@ -938,6 +996,9 @@ for var in args.__dict__:
             if args.DEBUG: print 'DEBUG-INFO: existe ',var,' y es ',vars(args)[var]
             globals()[var] = vars(args)[var]
     
+if args.interactive:
+    shell().cmdloop()
+
 if DEBUG: print 'DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE
 
 try:
@@ -946,7 +1007,6 @@ except:
     Print(0,'ABORT: No se ha dado nombre a la sesion')
     exit(False)
 CheckEnvironment()
-print config.status
 sesion.start()
 
 
