@@ -64,6 +64,7 @@ import tarfile
 from pprint import pprint
 import config
 import pickle
+import datetime
 
 state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR')
 
@@ -253,24 +254,27 @@ def humanToSize(size):
         if DEBUG: Debug('DEBUG-ERROR: (humanToSize) ',size,' no es traducible')
         return False
         
+def timeStamp():
+    return '['+str(datetime.datetime.now())+']\t'
+    
 def Print(level,*args,**kwargs):
     global VERBOSE
     if not VERBOSE: VERBOSE = 0
+    if kwargs != {}:
+        trail = kwargs['end']
+    else:
+        trail = '\n'
+    cadena = "".join(str(x) for x in args)
+    if VERBOSE >= level: print cadena+trail,
     
-    if VERBOSE >= level:
-        if kwargs != {}:
-            trail = kwargs['end']
-        else:
-            trail = '\n'
-        for string in args:
-            print(string),
-        print(trail),
+    if config.session:
+        config.session.log.writeLog(cadena+trail,False)
         
 def Debug(*args,**kwargs):
     global fDebug
     #Si tenemos verbose o no tenemos sesion sacamos la info por consola tambien
     if VERBOSE>0 or not config.session:
-        Print(0,"".join(str(x) for x in args))
+        print "".join(str(x) for x in args)
     #Si tenemos definida la sesion lo grabamos en el fichero
     if config.session:
         if not fDebug:
@@ -279,6 +283,7 @@ def Debug(*args,**kwargs):
             trail = kwargs['end']
         else:
             trail = '\n'
+        fDebug.write(timeStamp())
         for string in args:
             fDebug.write(str(string))
         fDebug.write(trail)
@@ -385,8 +390,9 @@ class Log(object):
         self.fUsersSkipped.writelines(string+"\n")
         self.fUsersSkipped.flush()
 
-    def writeLog(self,string):
-        self.fLogfile.write(string+"\n")
+    def writeLog(self,string,newline):
+        trail = "\n" if newline else ""
+        self.fLogfile.write(string + trail)
         self.fLogfile.flush()        
         
     def writeIterable(self,fHandle,iterable):
@@ -399,20 +405,20 @@ class Session(object):
     def abort(self,severity):
         "Funcion que lleva el control sobre el proceso de abortar"
         if ABORTLIMIT == 0: 
-            self.log.writeLog('ABORT: No abortamos porque ABORTLIMIT es 0')
+            self.log.writeLog('ABORT: No abortamos porque ABORTLIMIT es 0',True)
             return
                 
         if ABORTALWAYS:
-            self.log.writeLog('ABORT: Error y ABORTALWAYS es verdadero')
+            self.log.writeLog('ABORT: Error y ABORTALWAYS es verdadero',True)
             exit(False)
 
         if ABORTINSEVERITY and severity:
-            self.log.writeLog('ABORT: Error con severidad y ABORTINSEVERITY es verdadero')
+            self.log.writeLog('ABORT: Error con severidad y ABORTINSEVERITY es verdadero',True)
             exit(False)
             
         self.abortCount = self.abortCount + 1
         if self.abortCount > self.abortLimit:
-            self.log.writeLog('ABORT: Alcanzada la cuenta de errores para abort')
+            self.log.writeLog('ABORT: Alcanzada la cuenta de errores para abort',True)
             exit(False)
                     
         
@@ -456,7 +462,7 @@ class Session(object):
         else:
             #Abortamos porque no existe el directorio padre de los tars
             Print(0,'ABORT: (session-start) No existe el directorio para tars: ',config.TARDIR)
-        
+        self.log = Log(self)
         Print(0,'Procesando la sesion ',self.sessionId,' desde ',self.fromDate,' hasta ',self.toDate)
         
     def getaccountList(self):
@@ -469,8 +475,6 @@ class Session(object):
         #Directorio para TARS
         if DEBUG: Debug('DEBUG-INFO: (session.start) config.TARDIR es: ',config.TARDIR)
 
-        #Log
-        self.log = Log(self)
         #Creo la lista de cuentas
         if not self.accountList:
             self.getaccountList()
