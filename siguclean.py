@@ -250,7 +250,7 @@ def humanToSize(size):
             prefix[s] = 1 << (i+1)*10
         return int(num * prefix[letter])  
     except:
-        if DEBUG: print 'DEBUG-ERROR: (humanToSize) ',size,' no es traducible'
+        if DEBUG: Debug('DEBUG-ERROR: (humanToSize) ',size,' no es traducible')
         return False
         
 def Print(level,*args,**kwargs):
@@ -268,18 +268,21 @@ def Print(level,*args,**kwargs):
         
 def Debug(*args,**kwargs):
     global fDebug
-    if not fDebug:
-        fDebug = open(config.session.tardir+"/users.debug","w")
-    if kwargs != {}:
-        trail = kwargs['end']
-    else:
-        trail = '\n'
-    for string in args:
-        print(string),
-        fDebug.write(str(string))
-    print(trail),       
-    fDebug.write(trail)
-    fDebug.flush()
+    #Si tenemos verbose o no tenemos sesion sacamos la info por consola tambien
+    if VERBOSE>0 or not config.session:
+        Print(0,"".join(str(x) for x in args))
+    #Si tenemos definida la sesion lo grabamos en el fichero
+    if config.session:
+        if not fDebug:
+            fDebug = open(config.session.tardir+"/users.debug","w")
+        if kwargs != {}:
+            trail = kwargs['end']
+        else:
+            trail = '\n'
+        for string in args:
+            fDebug.write(str(string))
+        fDebug.write(trail)
+        fDebug.flush()
     
 def dnFromUser(user):
     import ldap 
@@ -312,7 +315,7 @@ def getListByDate(toDate , fromDate='1900-01-01'):
                        '\',\'yyyy-mm-dd\') AND to_date(\''+ toDate +\
                        '\',\'yyyy-mm-dd\')'
     query = Q_GET_BORRABLES + ' AND ' + Q_BETWEEN_DATES
-    if DEBUG: print("DEBUG-INFO: (getListByDate) Query:",query)
+    if DEBUG: Debug("DEBUG-INFO: (getListByDate) Query:",query)
     cursor = oracleCon.cursor()
     cursor.execute(query)     
     tmpList = cursor.fetchall()
@@ -373,6 +376,10 @@ class Log(object):
     def writeRollback(self,string):
         self.fUsersRollback.writelines(string+"\n")
         self.fUsersRollback.flush()
+
+    def writeNoRollback(self,string):
+        self.fUsersNoRollback.writelines(string+"\n")
+        self.fUsersNoRollback.flush()
 
     def writeSkipped(self,string):
         self.fUsersSkipped.writelines(string+"\n")
@@ -440,6 +447,16 @@ class Session(object):
         if not self.sessionId: raise ValueError
         if not self.fromDate: self.fromDate = '1900-01-01'
         if not self.toDate: self.toDate = '2100-01-01'
+        #Directorio para los tars
+        if os.path.exists(config.TARDIR):            
+            if self.sessionId:            
+                self.tardir = config.TARDIR + '/' + self.sessionId
+            if not os.path.isdir(self.tardir):
+                os.mkdir(self.tardir,0777)
+        else:
+            #Abortamos porque no existe el directorio padre de los tars
+            Print(0,'ABORT: (session-start) No existe el directorio para tars: ',config.TARDIR)
+        
         Print(0,'Procesando la sesion ',self.sessionId,' desde ',self.fromDate,' hasta ',self.toDate)
         
     def getaccountList(self):
@@ -451,14 +468,7 @@ class Session(object):
     def start(self):
         #Directorio para TARS
         if DEBUG: Debug('DEBUG-INFO: (session.start) config.TARDIR es: ',config.TARDIR)
-        if os.path.exists(config.TARDIR):            
-            if self.sessionId:            
-                self.tardir = config.TARDIR + '/' + self.sessionId
-            if not os.path.isdir(self.tardir):
-                os.mkdir(self.tardir,0777)
-        else:
-            #Abortamos porque no existe el directorio padre de los tars
-            Print(0,'ABORT: (session-start) No existe el directorio para tars: ',config.TARDIR)
+
         #Log
         self.log = Log(self)
         #Creo la lista de cuentas
@@ -505,7 +515,8 @@ class Session(object):
             #Si hemos llegado aquí todo esta OK
             if ABORTDECREASE: self.abortCount = self.abortCount -1
             if self.abortCount < 0: self.abortCount = 0
-            if DEBUG: self.log.writeLog('DEBUG-INFO: (session.start) abortCount: '+str(self.abortCount))                
+            if DEBUG: 
+                Debug('DEBUG-INFO: (session.start) abortCount: '+str(self.abortCount))               
             self.log.writeDone(user.cuenta)
             #Controlamos si hemos llegado al tamaño maximo
             if MAXSIZE > 0:
@@ -559,7 +570,7 @@ class Storage(object):
     def delete(self):
         "Borra un storage"
         #Primero tengo que controlar si no existe y no es mandatory
-        if DEBUG: print "DEBUG-INFO: (storage.delete) ",self.key," en ",self.path
+        if DEBUG: Debug("DEBUG-INFO: (storage.delete) ",self.key," en ",self.path)
         if not self.accesible and not self.mandatory:
             self.state = state.NOACCESIBLE
             return True
@@ -581,7 +592,7 @@ class Storage(object):
         - Si se ha borrado hacemos un untar
         - Borramos el tar
         - Ponemos el state como rollback"""
-        if DEBUG: Pprint('DEBUG-INFO: (storage.rollback)',self.__dict__)
+        if DEBUG: Debug('DEBUG-INFO: (storage.rollback)',self.__dict__)
         if self.state == state.DELETED or self.state == state.DELETEERROR:
             if not self.unarchive():
                 self.state = state.ERROR
@@ -593,7 +604,7 @@ class Storage(object):
         try:
             #Si no está archivado no hay que borrar el tar
             if self.state not in (state.ARCHIVED,state.TARFAIL): 
-                if DEBUG: print "DEBUG-INFO: (storage.rollback) No hago rollback de ",self.key," no estaba archivado"                
+                if DEBUG: Debug("DEBUG-INFO: (storage.rollback) No hago rollback de ",self.key," no estaba archivado")
                 return True
             #Borramos el tar
             os.remove(self.tarpath)
@@ -632,27 +643,27 @@ class Storage(object):
         basename = os.path.basename(self.path)
         #Nos aseguramos de que si ya hemos buscado y no hay alternativos salir
         if parentdir in config.altdirs and not config.altdirs[parentdir]:
-            if DEBUG: print "DEBUG-WARNING: User:",self.parent.cuenta," No existe path directo ni alternativo para ",self.key," en ",parentdir
+            if DEBUG: Debug("DEBUG-WARNING: User:",self.parent.cuenta," No existe path directo ni alternativo para ",self.key," en ",parentdir)
             self.accesible = False
             return False
-        if DEBUG: print "DEBUG-INFO: User:",self.parent.cuenta," No existe path directo para ",self.key," en ",self.path," busco alternativo ..."            
+        if DEBUG: Debug("DEBUG-INFO: User:",self.parent.cuenta," No existe path directo para ",self.key," en ",self.path," busco alternativo ...")
         #Buscamos en directorios alternativos del parentdir
         #esta busqueda puede ser gravosa si se debe repetir para cada usuario por
         #lo que una vez averiguados los alternativos se deben de almacenar globalmente
         if not parentdir in config.altdirs: 
-            if DEBUG: print "DEBUG-INFO: No he construido aun la lista alternativa para ",self.key," en ",parentdir," lo hago ahora ..."
+            if DEBUG: Debug("DEBUG-INFO: No he construido aun la lista alternativa para ",self.key," en ",parentdir," lo hago ahora ...")
             config.altdirs[parentdir] = [s for s in os.listdir(parentdir) 
                                         if s.startswith(ALTROOTPREFIX)] 
         #Si la lista esta vacia salimos directamente
         if not config.altdirs[parentdir]:
-            if DEBUG: print "DEBUG-WARNING: No existen directorios alternativos para ",self.key," en ",parentdir 
+            if DEBUG: Debug("DEBUG-WARNING: No existen directorios alternativos para ",self.key," en ",parentdir)
             self.accesible = False
             return False
         #Buscamos si existe en cualquiera de los directorios alternativos
         for path in config.altdirs[parentdir]:
             joinpath = os.path.join(parentdir,path,basename)
             if os.path.exists(joinpath):
-                if DEBUG: print "DEBUG-INFO: User:",self.parent.cuenta," encontrado alternativo para ",self.key," en ",joinpath
+                if DEBUG: Debug("DEBUG-INFO: User:",self.parent.cuenta," encontrado alternativo para ",self.key," en ",joinpath)
                 self.path = joinpath
                 self.accesible = True
                 return True
@@ -677,7 +688,7 @@ class User(object):
         for storage in self.storage:
             if not storage.exist() and storage.mandatory:
                 status = False
-                if DEBUG: print "DEBUG-WARNING: (user.check) El usuario ",self.cuenta," no ha pasado el chequeo"
+                if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," no ha pasado el chequeo")
                 break
         return status
         
@@ -705,7 +716,7 @@ class User(object):
     def __init__(self,cuenta):
         try:
             dummy = self.cuenta
-            if DEBUG: print "DEBUG-WARNING: (user.__init__) YA EXISTIA USUARIO ",self.cuenta, " VUELVO DE INIT"
+            if DEBUG: Debug("DEBUG-WARNING: (user.__init__) YA EXISTIA USUARIO ",self.cuenta, " VUELVO DE INIT")
             return
         except:
             pass
@@ -752,7 +763,7 @@ class User(object):
             if storage.delete():
                 continue
             else:
-                if DEBUG: print "DEBUG-ERROR: (user.deleteStorage) user:",self.cuenta," Storage: ",storage.key
+                if DEBUG: Debug("DEBUG-ERROR: (user.deleteStorage) user:",self.cuenta," Storage: ",storage.key)
                 return False
         return True
         
@@ -802,7 +813,7 @@ class User(object):
         
         for storage in self.storage:
             if not storage.archive(self.rootpath) and storage.mandatory: 
-                if DEBUG: print "DEBUG-INFO: (user.archive) mandatory de ",storage.key," es ",storage.mandatory
+                if DEBUG: Debug("DEBUG-INFO: (user.archive) mandatory de ",storage.key," es ",storage.mandatory)
                 ret = False
                 break
             else:
@@ -860,8 +871,8 @@ class User(object):
                 item = self.adObject[0]
                 dn = item[0]
                 atributos = item[1]
-                if DEBUG: print "DEBUG-INFO: (user.insertDN) DN:",dn
-                if DEBUG: print "DEBUG-INFO: (user.insertDN) AT:",atributos
+                if DEBUG: Debug("DEBUG-INFO: (user.insertDN) DN:",dn)
+                if DEBUG: Debug("DEBUG-INFO: (user.insertDN) AT:",atributos)
 
                 attrs=[]
                 attrList = [ "cn", "countryCode", "objectClass", "userPrincipalName", "info", "name", "displayName", "givenName", "sAMAccountName" ]
@@ -869,7 +880,7 @@ class User(object):
                    if attr in attrList:
                       attrs.append( (attr, atributos[attr]))
 
-                if DEBUG: Pprint("DEBUG-INFO: (user.insertDN) ==== ATTRS ====",attrs)
+                if DEBUG: Debug("DEBUG-INFO: (user.insertDN) ==== ATTRS ====",attrs)
                 if not DRYRUN:                
                     ldapCon.add_s( dn, attrs)
                 adFile.close()
@@ -943,7 +954,7 @@ class shell(cmd.Cmd):
         usuario.unarchive(config.TARDIR)
 
     def do_startsession(self,line):
-        if DEBUG: print "DEBUG: sessionID ",sessionId
+        if DEBUG: Debug("DEBUG: sessionID ",sessionId)
         ses = Session(sessionId,fromDate,toDate)
         ses.start()
 
@@ -1013,13 +1024,13 @@ print 'verbose es: ',VERBOSE
 for var in args.__dict__:
     if var in globals().keys():
         if vars(args)[var] is not None:
-            if args.DEBUG: print 'DEBUG-INFO: existe ',var,' y es ',vars(args)[var]
+            if args.DEBUG: Debug('DEBUG-INFO: existe ',var,' y es ',vars(args)[var])
             globals()[var] = vars(args)[var]
     
 if args.interactive:
     shell().cmdloop()
 
-if DEBUG: print 'DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE
+if DEBUG: Debug('DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE)
 
 try:
     sesion = Session(sessionId,fromDate,toDate)
