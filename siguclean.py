@@ -24,6 +24,9 @@ ORACLE_SERVER='ibmblade47/av10g'
 ALTROOTPREFIX = '0_'
 MAXSIZE = 0
 NTCHECK = 'ad'
+#Claves
+WINDOWS_PASS = None
+ORACLE_PASS = None
 
 #Control del abort
 """
@@ -122,7 +125,8 @@ def CheckConnections():
     import ldap,cx_Oracle
     #LDAP
     global WINDOWS_PASS
-    WINDOWS_PASS = raw_input('     Introduzca la clave de windows (administrador):')
+    if not WINDOWS_PASS:
+        WINDOWS_PASS = raw_input('     Introduzca la clave de windows (administrador): ')
     Print(1,'     comprobando conexion a ldap ... ',end='')
     try:
         global ldapCon
@@ -138,7 +142,8 @@ def CheckConnections():
         config.status.ldapCon = False
     #Oracle
     global ORACLE_PASS
-    ORACLE_PASS = raw_input('     Introduzca la clave de oracle (sigu):')
+    if not ORACLE_PASS:
+        ORACLE_PASS = raw_input('     Introduzca la clave de oracle (sigu): ')
     Print(1,'     comprobando conexion a oracle ... ',end='')
     try:
         global oracleCon
@@ -1012,6 +1017,8 @@ parser.add_argument('-f','--from',help='Seleccionar usuarios desde esta fecha',d
 parser.add_argument('-t','--to',help='Seleccionar usuarios hasta esta fecha',dest='toDate',action='store',default=None)
 parser.add_argument('-m','--maxsize',help='Limite de tamaño del archivado (0 sin limite)',dest='MAXSIZE',action='store',default='0')
 parser.add_argument('-w','--windows-check',help='Metodo de comprobacion de existencia de cuenta windows',choices=['ad','sigu','both'],dest='NTCHECK',action='store',default='ad')
+parser.add_argument('--win-password',help='Clave del administrador de windows',dest='WINDOWS_PASS',action='store',default=None)
+parser.add_argument('--sigu-password',help='Clave del usuario sigu',dest='ORACLE_PASS',action='store',default=None)
 parser.add_argument('--test',help='Para usar solo en el peirodo de pruebas',dest='TEST',action='store_true')
 parser.add_argument('--debug',help='Imprimir mensajes de depuracion',dest='DEBUG',action='store_true')
 parser.add_argument('--dry-run',help='No realiza ninguna operacion de escritura critica',dest='DRYRUN',action='store_true')
