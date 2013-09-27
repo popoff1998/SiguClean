@@ -16,6 +16,9 @@ DRYRUN = False
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
 Q_GET_CUENTA_NT = 'SELECT CCUENTA FROM UT_CUENTAS_NT WHERE CCUENTA ='
+Q_INSERT_STORAGE = 'INSERT INTO UT_ST_STORAGE (IDSESION,CCUENTA,TTAR.NSIZE,TESTADO) VALUES '
+Q_INSERT_SESION = 'INSERT INTO UT_ST_SESION (IDSESION,FSESION,FINICIAL,FFINAL) VALUES '
+
 #LDAP_SERVER = "ldap://ldap1.priv.uco.es"
 LDAP_SERVER = "ldaps://ucoapp08.uco.es"
 BIND_DN = "Administrador@uco.es"
@@ -273,7 +276,8 @@ def Print(level,*args,**kwargs):
     if VERBOSE >= level: print cadena+trail,
     
     if config.session:
-        config.session.log.writeLog(cadena+trail,False)
+        if hasattr(config.session,'log'):
+            config.session.log.writeLog(cadena+trail,False)
         
 def Debug(*args,**kwargs):
     global fDebug
@@ -329,6 +333,7 @@ def getListByDate(toDate , fromDate='1900-01-01'):
     cursor = oracleCon.cursor()
     cursor.execute(query)     
     tmpList = cursor.fetchall()
+    cursor.close()
     #Convertimos para quitar tuplas
     userList = [x[0] for x in tmpList]        
     config.status.userList = True
@@ -360,6 +365,25 @@ def hasCuentaNT(cuenta):
     if NTCHECK == 'sigu': return True if statSigu else  False
     if NTCHECK == 'ad': return statAD
     return True if statAD and statSigu else  False
+    
+def comillas(cadena):
+    return '\''+cadena+'\''
+
+def valueslist(*args,**kwargs):
+    cadena = '('
+    size = len(args)
+    argnumber = 1
+    for x in args:
+        if type(x) is str:
+            cad = comillas(x)
+        else:
+            cad = str(x)
+        cadena = cadena + cad 
+        if argnumber < size:
+            cadena = cadena + ','
+	argnumber = argnumber + 1
+    cadena = cadena + ')'
+    return cadena
 
 #CLASES
 
@@ -374,6 +398,7 @@ class Log(object):
         self.fUsersSkipped = open(session.tardir+'/users.skipped','w')
         self.fLogfile = open(session.tardir+'/logfile','w')
         self.fUsersList = open(session.tardir+'/users.list','w')
+        self.fBbddLog = open(session.tardir+'/bbddlog','w')
         
     def writeDone(self,string):
         self.fUsersDone.writelines(string+"\n")
@@ -399,6 +424,10 @@ class Log(object):
         trail = "\n" if newline else ""
         self.fLogfile.write(string + trail)
         self.fLogfile.flush()        
+        
+    def writeBbdd(self,string):
+        self.fBbddLog.writelines(string+"\n")
+        self.fBbddlog.flush()
         
     def writeIterable(self,fHandle,iterable):
         line = "\n".join(iterable)            
@@ -475,6 +504,24 @@ class Session(object):
             self.accountList = ['games','news','uucp','pepe']
         else:
             self.acountlist = getListByDate(self.toDate,self.fromDate)
+            
+    def bbddInsert(self):
+        """ Inserta un registro de archivado en la BBDD """
+        now = datetime.datetime.now()
+        try:
+            values = valueslist(sessionId,now.strftime('%Y-%m-%d'),self.fromDate,self.toDate)
+            query = Q_INSERT_SESION + values        
+            config.session.log.writeBbdd(query)
+            if DRYRUN:
+                return True
+            cursor = oracleCon.cursor()
+            cursor.execute(query)
+            oracleCon.commit()
+            cursor.close()                 
+            
+        except:
+            Print(0,"ERROR: Almacenando en la BBDD sesion ",self.sessionId)
+            return False
     
     def start(self):
         #Directorio para TARS
@@ -490,6 +537,8 @@ class Session(object):
             for account in self.accountList:
                 user = User(account)
                 self.userList.append(user) 
+        #Insertamos sesion en BBDD
+        self.bbddInsert()
         #Proceso las entradas
         skip = False
         for user in self.userList:
@@ -564,6 +613,7 @@ class Storage(object):
                 f.close()
                 self.tarsize = os.lstat(self.tarpath).st_size                
                 self.state = state.ARCHIVED                
+                self.bbddInsert()
                 return True
             tar = tarfile.open(self.tarpath,"w:bz2")
             tar.add(self.path)
@@ -575,7 +625,24 @@ class Storage(object):
             Print(0,"ERROR: Archivando",self.key)
             self.state = state.TARFAIL
             return False
-    
+            
+    def bbddInsert(self):
+        """ Inserta un registro de archivado en la BBDD """
+        try:
+            values = valueslist(sessionId,self.parent.cuenta,self.tarpath,self.tarsize,self.state)
+            query = Q_INSERT_STORAGE + values        
+            config.session.log.writeBbdd(query)
+            if DRYRUN:
+                return True
+            cursor = oracleCon.cursor()
+            cursor.execute(query)
+            oracleCon.commit()
+            cursor.close()                 
+            
+        except:
+            Print(0,"ERROR: Almacenando en la BBDD storage ",self.key)
+            return False
+            
     def delete(self):
         "Borra un storage"
         #Primero tengo que controlar si no existe y no es mandatory
@@ -703,10 +770,6 @@ class User(object):
         
     def borraCuentaWindows(self):
         "Borra la cuenta windows de la BBDD sigu"
-        return True
-        
-    def insertArchiveRecord(self):
-        "Inserta el registro de archivado en la BBDD sigu"
         return True
         
     def listCuentas(self):
