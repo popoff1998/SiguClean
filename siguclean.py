@@ -16,8 +16,8 @@ DRYRUN = False
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
 Q_GET_CUENTA_NT = 'SELECT CCUENTA FROM UT_CUENTAS_NT WHERE CCUENTA ='
-Q_INSERT_STORAGE = 'INSERT INTO UT_ST_STORAGE (IDSESION,CCUENTA,TTAR.NSIZE,TESTADO) VALUES '
-Q_INSERT_SESION = 'INSERT INTO UT_ST_SESION (IDSESION,FSESION,FINICIAL,FFINAL) VALUES '
+Q_INSERT_STORAGE = 'INSERT INTO UT_ST_STORAGE (IDSESION,CCUENTA,TTAR,NSIZE,CESTADO) VALUES '
+Q_INSERT_SESION = 'INSERT INTO UT_ST_SESION (IDSESION,FSESION,FINICIAL,FFINAL,DSESION) VALUES '
 
 #LDAP_SERVER = "ldap://ldap1.priv.uco.es"
 LDAP_SERVER = "ldaps://ucoapp08.uco.es"
@@ -71,6 +71,7 @@ from pprint import pprint
 import config
 import pickle
 import datetime
+import dateutil.parser
 
 state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR')
 
@@ -330,10 +331,14 @@ def getListByDate(toDate , fromDate='1900-01-01'):
                        '\',\'yyyy-mm-dd\')'
     query = Q_GET_BORRABLES + ' AND ' + Q_BETWEEN_DATES
     if DEBUG: Debug("DEBUG-INFO: (getListByDate) Query:",query)
-    cursor = oracleCon.cursor()
-    cursor.execute(query)     
-    tmpList = cursor.fetchall()
-    cursor.close()
+    try:
+        cursor = oracleCon.cursor()
+        cursor.execute(query)     
+        tmpList = cursor.fetchall()
+        cursor.close()
+    except BaseException,e:
+        Print(0,"ERROR: Error recuperando la lista de usuarios")
+        if DEBUG: Debug("DEBUG-ERROR: (getListByDate): ",e)
     #Convertimos para quitar tuplas
     userList = [x[0] for x in tmpList]        
     config.status.userList = True
@@ -374,10 +379,16 @@ def valueslist(*args,**kwargs):
     size = len(args)
     argnumber = 1
     for x in args:
-        if type(x) is str:
-            cad = comillas(x)
-        else:
-            cad = str(x)
+        #Parseamos primero para ver si puede ser una fecha
+        try:
+            dt = dateutil.parser.parse(x)
+            #Es una fecha parseable
+            cad = 'TO_DATE(' + comillas(x) + ',\'YYYY-MM-DD\')'
+        except BaseException,e:
+            if type(x) is str:
+                cad = comillas(x)
+            else:
+                cad = str(x)
         cadena = cadena + cad 
         if argnumber < size:
             cadena = cadena + ','
@@ -426,9 +437,15 @@ class Log(object):
         self.fLogfile.flush()        
         
     def writeBbdd(self,string):
-        self.fBbddLog.writelines(string+"\n")
-        self.fBbddlog.flush()
-        
+        try:
+            self.fBbddLog.write(string+"\n")
+            self.fBbddLog.flush()
+        except IOError:
+            print "I/O Error({0}) : {1}".format(e.errno, e.strerror)
+        except ValueError:
+            print "Error de valor"
+        except AttributeError,e:
+            print "Error de atributo: ",e            
     def writeIterable(self,fHandle,iterable):
         line = "\n".join(iterable)            
         fHandle.write(line)
@@ -483,6 +500,7 @@ class Session(object):
         self.abortAlways = ABORTALWAYS
         self.abortInSeverity = ABORTINSEVERITY
         self.maxSize = MAXSIZE
+        self.idsesion = 0
         #Comprobamos los parametros para poder ejecutar
         if not self.sessionId: raise ValueError
         if not self.fromDate: self.fromDate = '1900-01-01'
@@ -503,24 +521,27 @@ class Session(object):
         if TEST:
             self.accountList = ['games','news','uucp','pepe']
         else:
-            self.acountlist = getListByDate(self.toDate,self.fromDate)
+            self.accountList = getListByDate(self.toDate,self.fromDate)
             
     def bbddInsert(self):
         """ Inserta un registro de archivado en la BBDD """
         now = datetime.datetime.now()
         try:
-            values = valueslist(sessionId,now.strftime('%Y-%m-%d'),self.fromDate,self.toDate)
-            query = Q_INSERT_SESION + values        
-            config.session.log.writeBbdd(query)
+            cursor = oracleCon.cursor()
+            #Consigo el idsesion
+            self.idsesion = int(cursor.callfunc('UF_ST_SESION',cx_Oracle.NUMBER))
+            values = valueslist(self.idsesion,now.strftime('%Y-%m-%d'),self.fromDate,self.toDate,self.sessionId)
+            query = Q_INSERT_SESION + values
+            self.log.writeBbdd(query)
             if DRYRUN:
                 return True
-            cursor = oracleCon.cursor()
             cursor.execute(query)
             oracleCon.commit()
-            cursor.close()                 
-            
-        except:
+            cursor.close()    
+            return True
+        except BaseException,e:
             Print(0,"ERROR: Almacenando en la BBDD sesion ",self.sessionId)
+            if DEBUG: Debug("DEBUG-ERROR: (sesion.bbddInsert) Error: ",e)
             return False
     
     def start(self):
@@ -629,7 +650,8 @@ class Storage(object):
     def bbddInsert(self):
         """ Inserta un registro de archivado en la BBDD """
         try:
-            values = valueslist(sessionId,self.parent.cuenta,self.tarpath,self.tarsize,self.state)
+            #Como en sigu 
+            values = valueslist(config.session.idsesion,self.parent.cuenta,self.tarpath,self.tarsize,self.state._index)
             query = Q_INSERT_STORAGE + values        
             config.session.log.writeBbdd(query)
             if DRYRUN:
@@ -638,9 +660,10 @@ class Storage(object):
             cursor.execute(query)
             oracleCon.commit()
             cursor.close()                 
-            
-        except:
+            return True
+        except BaseException,e:
             Print(0,"ERROR: Almacenando en la BBDD storage ",self.key)
+            if DEBUG: Debug("DEBUG-ERROR: (storage.bbddInsert) Error: ",e)
             return False
             
     def delete(self):
@@ -819,7 +842,7 @@ class User(object):
                     if c == 'WINDOWS':
                         #En el caso de windows el homedir es siempre la cuenta
                         sto_path = m['val'] + '/' + self.cuenta
-                        status,dn,result_type = dnFromUser(self.cuenta)
+                        status,dn,tupla,result_type = dnFromUser(self.cuenta)
                         if status:
                             self.dn = dn
                         else:
@@ -1059,6 +1082,10 @@ class shell(cmd.Cmd):
     def do_ldapfromsigu(self,line):
         print ldapFromSigu(line.split()[0],line.split()[1])
         
+    def do_bbddsesion(self,line):
+        ses = Session(sessionId,fromDate,toDate)
+        ses.bbddInsert()        
+        
     def __init__(self):
         cmd.Cmd.__init__(self)
         
@@ -1103,6 +1130,7 @@ for var in args.__dict__:
     
 if args.interactive:
     shell().cmdloop()
+    exit(0)
 
 if DEBUG: Debug('DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE)
 
