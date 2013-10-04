@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python2.7
 # -*- coding: utf-8 -*-
 """
 Created on Mon May 20 09:09:42 2013
@@ -53,10 +53,10 @@ if TEST:
     MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFSTEST','mandatory':True,'val':''},
               {'account':'MAIL','fs':'homemail','label':'NEWMAILTEST','mandatory':False,'val':''})  
 else:
-    MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFSTEST','mandatory':True,'val':''},
-              {'account':'MAIL','fs':'homemail','label':'INSTALACIONES','mandatory':False,'val':''},  
-              {'account':'WINDOWS','fs':'perfiles','label':'PERFILES','mandatory':False,'val':''},  
-              {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})
+    MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'nfsro/HOMESNFS','mandatory':True,'val':''},
+              {'account':'MAIL','fs':'homemail','label':'nfsro/MAIL','mandatory':False,'val':''},  
+              {'account':'WINDOWS','fs':'perfiles','label':'nfsro/PERFILES','mandatory':False,'val':''},  
+              {'account':'WINDOWS','fs':'homecifs','label':'nfsro/HOMESCIF','mandatory':True,'val':''})
 
     sessionId = ""
     fromDate = ""
