@@ -12,6 +12,7 @@ TEST = False
 DEBUG = True
 VERBOSE = 1
 DRYRUN = False
+CONFIRM = False
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
@@ -44,6 +45,9 @@ ABORTALWAYS     = False
 ABORTINSEVERITY = False
 fDebug = None
 
+#Filtro de exclusion de momtajes, lo inicializamos como algo imposible de cumplir
+MOUNT_EXCLUDE = "(?=a)b"
+
 #PARAMETROS DE LA EJECUCION
 if TEST:
     sessionId = "PRUEBA1"
@@ -53,10 +57,10 @@ if TEST:
     MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFSTEST','mandatory':True,'val':''},
               {'account':'MAIL','fs':'homemail','label':'NEWMAILTEST','mandatory':False,'val':''})  
 else:
-    MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'nfsro/HOMESNFS','mandatory':True,'val':''},
-              {'account':'MAIL','fs':'homemail','label':'nfsro/MAIL','mandatory':False,'val':''},  
-              {'account':'WINDOWS','fs':'perfiles','label':'nfsro/PERFILES','mandatory':False,'val':''},  
-              {'account':'WINDOWS','fs':'homecifs','label':'nfsro/HOMESCIF','mandatory':True,'val':''})
+    MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFS','mandatory':True,'val':''},
+              {'account':'MAIL','fs':'homemail','label':'MAIL','mandatory':False,'val':''},  
+              {'account':'WINDOWS','fs':'perfiles','label':'PERFILES','mandatory':False,'val':''},  
+              {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})
 
     sessionId = ""
     fromDate = ""
@@ -72,6 +76,7 @@ import config
 import pickle
 import datetime
 import dateutil.parser
+import re
 
 state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR')
 
@@ -79,7 +84,14 @@ state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR
 #FUNCIONES
 import collections
 
-
+def confirm():
+    #Pide confirmacion por teclado
+    a = raw_input("Desea continuar S/N (N)")
+    if a == "S":
+        return True
+    else:
+        exit(True)
+        
 def iterable(obj):
     if isinstance(obj, collections.Iterable):
         return True
@@ -158,14 +170,23 @@ def CheckConnections():
         Print(1,"ERROR")
         config.status.oracleCon = False
 
-def get_mount_point(algo):
+def get_mount_point(algo,exclude_regex):
     "Devuelve el punto de montaje que contiene algo en el export"
     try:
         with open("/proc/mounts", "r") as ifp:
             for line in ifp:
                 fields= line.rstrip('\n').split()
+                if DEBUG: Debug("EXPORT: ",fields[0]," MOUNT: ",fields[1]," ALGO: ",algo)
                 if algo in fields[0]: 
-                    return fields[1]
+                    #Es un posible montaje, vemos si esta excluido
+                    ret = exclude_regex.search(fields[1])
+                    if DEBUG: Debug("DEBUG-INFO (getmountpoint): campo es ",fields[1]," ret es ",ret)
+                    if ret is not None:
+                        if DEBUG: Debug("EXCLUIDO")
+                        pass
+                    else:
+                        if DEBUG: Debug("INCLUIDO")
+                        return fields[1]
     except EnvironmentError:
         pass
     return None # explicit
@@ -173,10 +194,16 @@ def get_mount_point(algo):
 def CheckMounts():
     "Comprueba que los puntos de montaje están accesibles"
     Print(1,"  Comprobando el acceso a los Datos")
+    try:
+        regex = re.compile(MOUNT_EXCLUDE)
+        if DEBUG: Debug("DEBUG-INFO: Regex de exclusion es ",MOUNT_EXCLUDE," y su valor es ",regex)
+    except:
+        Print(0,"La expresion ",MOUNT_EXCLUDE," no es una regex valida, abortamos ...")
+        exit(False)
     salgo = False
     for var in MOUNTS:
         Print(1,'     comprobando '+var['fs']+' ...',end='')
-        var['val'] = get_mount_point(var['label'])
+        var['val'] = get_mount_point(var['label'],regex)
         if var['val'] != None:
             Print(1,var['val'])
             exec("config.status.%s = True" % (var['fs']))
@@ -187,6 +214,7 @@ def CheckMounts():
     if salgo:
         Print(0,'ABORT: Algunos puntos de montaje no estan accesibles')
         exit(False)
+    if CONFIRM: confirm()
 
 def inputParameter(param,text,mandatory):
     "Lee un parametro admitiendo que la tecla intro ponga el anterior"
@@ -1113,8 +1141,8 @@ parser.add_argument('--test',help='Para usar solo en el peirodo de pruebas',dest
 parser.add_argument('--debug',help='Imprimir mensajes de depuracion',dest='DEBUG',action='store_true')
 parser.add_argument('--dry-run',help='No realiza ninguna operacion de escritura critica',dest='DRYRUN',action='store_true')
 parser.add_argument('-v','--verbosity',help='Incrementa el detalle de los mensajes',action='count')
-
-
+parser.add_argument('-x','--mount-exlude',help='Excluye esta regex de los posibles montajes',dest='MOUNT_EXCLUDE',action='store',default="(?=a)b")
+parser.add_argument('--confirm',help='Pide confirmación antes de realizar determinadas acciones',dest='CONFIRM',action='store_true')
 args = parser.parse_args()
 
 VERBOSE = args.verbosity
