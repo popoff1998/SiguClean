@@ -10,6 +10,7 @@ Created on Mon May 20 09:09:42 2013
 #Defines
 TEST = False
 DEBUG = True
+EXTRADEBUG = False
 VERBOSE = 1
 DRYRUN = False
 CONFIRM = False
@@ -180,7 +181,7 @@ def get_mount_point(algo,exclude_regex):
                 if algo in fields[0]: 
                     #Es un posible montaje, vemos si esta excluido
                     ret = exclude_regex.search(fields[1])
-                    if DEBUG: Debug("DEBUG-INFO (getmountpoint): campo es ",fields[1]," ret es ",ret)
+                    if DEBUG: Debug("DEBUG-INFO: (getmountpoint): campo es ",fields[1]," ret es ",ret)
                     if ret is not None:
                         if DEBUG: Debug("DEBUG-INFO: EXCLUIDO")
                         pass
@@ -268,7 +269,7 @@ def imprime(userList):
 def sizeToHuman(size):
     symbols = ('B','K','M','G','T')
     indice = 0
-    if DEBUG: Debug("DEBUG-INFO: (sizeToHuman) Size antes de redondear es: ",size )
+    if EXTRADEBUG: Debug("DEBUG-INFO: (sizeToHuman) Size antes de redondear es: ",size )
     while(True):
         if size < 1024:
             string = str(size)+symbols[indice]
@@ -604,7 +605,7 @@ class Session(object):
                 self.log.writeSkipped(user.cuenta)
                 continue
             #Chequeamos ...
-            if DEBUG: Debug("DEBUG: *** PROCESANDO USUARIO ",user.cuenta," ***")
+            if DEBUG: Debug("DEBUG-INFO: *** PROCESANDO USUARIO ",user.cuenta," ***")
             if not user.check():
                 if not self.die(user,False):continue
             #... Archivamos ...
@@ -1090,7 +1091,7 @@ class shell(cmd.Cmd):
         usuario.unarchive(config.TARDIR)
 
     def do_startsession(self,line):
-        if DEBUG: Debug("DEBUG: sessionID ",sessionId)
+        if DEBUG: Debug("DEBUG-INFO: sessionID ",sessionId)
         ses = Session(sessionId,fromDate,toDate)
         ses.start()
 
