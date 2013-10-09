@@ -176,16 +176,16 @@ def get_mount_point(algo,exclude_regex):
         with open("/proc/mounts", "r") as ifp:
             for line in ifp:
                 fields= line.rstrip('\n').split()
-                if DEBUG: Debug("EXPORT: ",fields[0]," MOUNT: ",fields[1]," ALGO: ",algo)
+                if DEBUG: Debug("DEBUG-INFO: EXPORT: ",fields[0]," MOUNT: ",fields[1]," ALGO: ",algo)
                 if algo in fields[0]: 
                     #Es un posible montaje, vemos si esta excluido
                     ret = exclude_regex.search(fields[1])
                     if DEBUG: Debug("DEBUG-INFO (getmountpoint): campo es ",fields[1]," ret es ",ret)
                     if ret is not None:
-                        if DEBUG: Debug("EXCLUIDO")
+                        if DEBUG: Debug("DEBUG-INFO: EXCLUIDO")
                         pass
                     else:
-                        if DEBUG: Debug("INCLUIDO")
+                        if DEBUG: Debug("DEBUG-INFO: INCLUIDO")
                         return fields[1]
     except EnvironmentError:
         pass
@@ -350,7 +350,7 @@ def ldapFromSigu(cuenta,attr):
     cursor.execute(Q_LDAP_SIGU)     
     tmpList = cursor.fetchall()
     tmpList = tmpList[0][0]
-    print "tmplist = ",tmpList
+    if DEBUG: Debug("DEBUG-INFO (ldapFromSigu): tmplist = ",tmpList)
     return tmpList.strip().split(':')[1].strip() if tmpList else None
     
 def getListByDate(toDate , fromDate='1900-01-01'):
@@ -438,6 +438,7 @@ class Log(object):
         self.fLogfile = open(session.tardir+'/logfile','w')
         self.fUsersList = open(session.tardir+'/users.list','w')
         self.fBbddLog = open(session.tardir+'/bbddlog','w')
+        self.fFailReason = open(session.tardir+'/failreason',"w")
         
     def writeDone(self,string):
         self.fUsersDone.writelines(string+"\n")
@@ -446,6 +447,10 @@ class Log(object):
     def writeFailed(self,string):
         self.fUsersFailed.writelines(string+"\n")
         self.fUsersFailed.flush()
+        
+    def writeFailReason(self,string):
+        self.fFailReason.writelines(string+"\n")
+        self.fFailReason.flush()
         
     def writeRollback(self,string):
         self.fUsersRollback.writelines(string+"\n")
@@ -475,8 +480,9 @@ class Log(object):
         except AttributeError,e:
             print "Error de atributo: ",e            
     def writeIterable(self,fHandle,iterable):
-        line = "\n".join(iterable)            
-        fHandle.write(line)
+        line = "\n".join(iterable)
+        line = line+"\n"          
+        fHandle.writelines(line)
         fHandle.flush()
         
 class Session(object):
@@ -511,6 +517,9 @@ class Session(object):
                 self.log.writeNoRollback(user.cuenta)
                 self.abort(True)
         self.log.writeFailed(user.cuenta)
+        #Generamos y grabamos la razon del fallo
+        cad = user.cuenta+"\t"+user.failreason
+        self.log.writeFailReason(cad)
         return False
             
     def __init__(self,sessionId,fromDate,toDate):
@@ -654,7 +663,7 @@ class Storage(object):
             self.state = state.NOACCESIBLE
             return False
         self.tarpath = rootpath + '/' + self.parent.cuenta + '_' + self.key + '_' + sessionId + ".tar"
-        Print(1,"Archiving ",self.key," from ",self.path," in ",self.tarpath," ... ")
+        Print(1,"Archivando ",self.key," from ",self.path," in ",self.tarpath," ... ")
         try:
             if DRYRUN: 
                 #Calculo el tamaño sin comprimir y creo un fichero vacio para la simulacion                
@@ -762,6 +771,7 @@ class Storage(object):
         se tiene en cuenta que si no existe en el sitio por defecto
         puede existir en los root alternativos"""
         #Existe el path
+        if DEBUG: Debug("DEBUG-INFO: ****** PROCESANDO ",self.path," *******")
         if os.path.exists(self.path):
             self.accesible = True
             return True
@@ -815,6 +825,7 @@ class User(object):
         for storage in self.storage:
             if not storage.exist() and storage.mandatory:
                 status = False
+                self.failreason = "NOTEXIST\t"+storage.key+"\tMANDATORY"
                 if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," no ha pasado el chequeo")
                 break
         return status
@@ -844,6 +855,7 @@ class User(object):
         except:
             pass
         self.dn = None
+        self.failreason = None
         self.cuenta = cuenta
         if TEST:
             self.homedir = cuenta
@@ -937,6 +949,7 @@ class User(object):
         for storage in self.storage:
             if not storage.archive(self.rootpath) and storage.mandatory: 
                 if DEBUG: Debug("DEBUG-INFO: (user.archive) mandatory de ",storage.key," es ",storage.mandatory)
+                self.failreason = "STORAGE\t"+storage.key+"\t"+storage.state  
                 ret = False
                 break
             else:
