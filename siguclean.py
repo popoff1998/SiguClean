@@ -13,12 +13,13 @@ DEBUG = True
 EXTRADEBUG = False
 VERBOSE = 1
 DRYRUN = False
+SOFTRUN = False
 CONFIRM = False
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
 Q_GET_CUENTA_NT = 'SELECT CCUENTA FROM UT_CUENTAS_NT WHERE CCUENTA ='
-Q_INSERT_STORAGE = 'INSERT INTO UT_ST_STORAGE (IDSESION,CCUENTA,TTAR,NSIZE,CESTADO) VALUES '
+Q_INSERT_STORAGE = 'INSERT INTO UT_ST_STORAGE (IDSESSION,CCUENTA,TTAR,NSIZE,CESTADO) VALUES '
 Q_INSERT_SESION = 'INSERT INTO UT_ST_SESION (IDSESION,FSESION,FINICIAL,FFINAL,DSESION) VALUES '
 
 #LDAP_SERVER = "ldap://ldap1.priv.uco.es"
@@ -317,7 +318,7 @@ def Debug(*args,**kwargs):
     #Si tenemos definida la sesion lo grabamos en el fichero
     if config.session:
         if not fDebug:
-            fDebug = open(config.session.tardir+"/users.debug","w")
+            fDebug = open(config.session.tardir+"/debug","w")
         if kwargs != {}:
             trail = kwargs['end']
         else:
@@ -571,7 +572,7 @@ class Session(object):
             values = valueslist(self.idsesion,now.strftime('%Y-%m-%d'),self.fromDate,self.toDate,self.sessionId)
             query = Q_INSERT_SESION + values
             self.log.writeBbdd(query)
-            if DRYRUN:
+            if DRYRUN and not SOFTRUN:
                 return True
             cursor.execute(query)
             oracleCon.commit()
@@ -666,7 +667,7 @@ class Storage(object):
         self.tarpath = rootpath + '/' + self.parent.cuenta + '_' + self.key + '_' + sessionId + ".tar"
         Print(1,"Archivando ",self.key," from ",self.path," in ",self.tarpath," ... ")
         try:
-            if DRYRUN: 
+            if DRYRUN and not SOFTRUN: 
                 #Calculo el tamaño sin comprimir y creo un fichero vacio para la simulacion                
                 f = open(self.tarpath,"w")
                 f.close()
@@ -679,6 +680,7 @@ class Storage(object):
             tar.close()
             self.tarsize = os.path.getsize(self.tarpath)
             self.state = state.ARCHIVED
+            self.bbddInsert()
             return True
         except:
             Print(0,"ERROR: Archivando",self.key)
@@ -692,7 +694,7 @@ class Storage(object):
             values = valueslist(config.session.idsesion,self.parent.cuenta,self.tarpath,self.tarsize,self.state._index)
             query = Q_INSERT_STORAGE + values        
             config.session.log.writeBbdd(query)
-            if DRYRUN:
+            if DRYRUN and not SOFTRUN:
                 return True
             cursor = oracleCon.cursor()
             cursor.execute(query)
@@ -1153,7 +1155,8 @@ parser.add_argument('--win-password',help='Clave del administrador de windows',d
 parser.add_argument('--sigu-password',help='Clave del usuario sigu',dest='ORACLE_PASS',action='store',default=None)
 parser.add_argument('--test',help='Para usar solo en el peirodo de pruebas',dest='TEST',action='store_true')
 parser.add_argument('--debug',help='Imprimir mensajes de depuracion',dest='DEBUG',action='store_true')
-parser.add_argument('--dry-run',help='No realiza ninguna operacion de escritura critica',dest='DRYRUN',action='store_true')
+parser.add_argument('--dry-run',help='No realiza ninguna operacion de escritura',dest='DRYRUN',action='store_true')
+parser.add_argument('--soft-run',help='Junto a dry-run, si genera los tars y la insercion en la BBDD',dest='SOFTRUN',action='store_true')
 parser.add_argument('-v','--verbosity',help='Incrementa el detalle de los mensajes',action='count')
 parser.add_argument('-x','--mount-exlude',help='Excluye esta regex de los posibles montajes',dest='MOUNT_EXCLUDE',action='store',default="(?=a)b")
 parser.add_argument('--confirm',help='Pide confirmación antes de realizar determinadas acciones',dest='CONFIRM',action='store_true')
