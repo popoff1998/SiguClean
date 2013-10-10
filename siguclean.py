@@ -19,7 +19,7 @@ CONFIRM = False
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
 Q_GET_CUENTA_NT = 'SELECT CCUENTA FROM UT_CUENTAS_NT WHERE CCUENTA ='
-Q_INSERT_STORAGE = 'INSERT INTO UT_ST_STORAGE (IDSESSION,CCUENTA,TTAR,NSIZE,CESTADO) VALUES '
+Q_INSERT_STORAGE = 'INSERT INTO UT_ST_STORAGE (IDSESION,CCUENTA,TTAR,NSIZE,CESTADO) VALUES '
 Q_INSERT_SESION = 'INSERT INTO UT_ST_SESION (IDSESION,FSESION,FINICIAL,FFINAL,DSESION) VALUES '
 
 #LDAP_SERVER = "ldap://ldap1.priv.uco.es"
@@ -60,7 +60,7 @@ if TEST:
               {'account':'MAIL','fs':'homemail','label':'NEWMAILTEST','mandatory':False,'val':''})  
 else:
     MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFS','mandatory':True,'val':''},
-              {'account':'MAIL','fs':'homemail','label':'MAIL','mandatory':False,'val':''},  
+              {'account':'MAIL','fs':'homemail','label':'MAIL','mandatory':True,'val':''},  
               {'account':'WINDOWS','fs':'perfiles','label':'PERFILES','mandatory':False,'val':''},  
               {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})
 
