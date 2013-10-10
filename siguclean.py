@@ -9,12 +9,13 @@ Created on Mon May 20 09:09:42 2013
 
 #Defines
 TEST = False
-DEBUG = True
+DEBUG = False
 EXTRADEBUG = False
 VERBOSE = 1
 DRYRUN = False
 SOFTRUN = False
 CONFIRM = False
+ONLYCOUNT = False
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
@@ -145,19 +146,20 @@ def CheckConnections():
     global WINDOWS_PASS
     if not WINDOWS_PASS:
         WINDOWS_PASS = raw_input('     Introduzca la clave de windows (administrador): ')
-    Print(1,'     comprobando conexion a ldap ... ',end='')
-    try:
-        global ldapCon
-        ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, 0)
-        ldap.set_option(ldap.OPT_REFERRALS,0)
-        ldapCon = ldap.initialize(LDAP_SERVER)
-        ldapCon.simple_bind_s(BIND_DN, WINDOWS_PASS)
-        config.status.ldapCon = True
-        Print(1,"CORRECTO")
-    except ldap.LDAPError, e:
-        Print(1,"ERROR")
-        Print(e)
-        config.status.ldapCon = False
+    if WINDOWS_PASS != "dummy":
+        Print(1,'     comprobando conexion a ldap ... ',end='')
+        try:
+            global ldapCon
+            ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, 0)
+            ldap.set_option(ldap.OPT_REFERRALS,0)
+            ldapCon = ldap.initialize(LDAP_SERVER)
+            ldapCon.simple_bind_s(BIND_DN, WINDOWS_PASS)
+            config.status.ldapCon = True
+            Print(1,"CORRECTO")
+        except ldap.LDAPError, e:
+            Print(1,"ERROR")
+            Print(e)
+            config.status.ldapCon = False
     #Oracle
     global ORACLE_PASS
     if not ORACLE_PASS:
@@ -1157,13 +1159,14 @@ parser.add_argument('--test',help='Para usar solo en el peirodo de pruebas',dest
 parser.add_argument('--debug',help='Imprimir mensajes de depuracion',dest='DEBUG',action='store_true')
 parser.add_argument('--dry-run',help='No realiza ninguna operacion de escritura',dest='DRYRUN',action='store_true')
 parser.add_argument('--soft-run',help='Junto a dry-run, si genera los tars y la insercion en la BBDD',dest='SOFTRUN',action='store_true')
+parser.add_argument('--only-count',help='Devuelve solo el numero de usuarios entre las dos fechas dadas',dest='ONLYCOUNT',action='store_true')
 parser.add_argument('-v','--verbosity',help='Incrementa el detalle de los mensajes',action='count')
 parser.add_argument('-x','--mount-exlude',help='Excluye esta regex de los posibles montajes',dest='MOUNT_EXCLUDE',action='store',default="(?=a)b")
 parser.add_argument('--confirm',help='Pide confirmación antes de realizar determinadas acciones',dest='CONFIRM',action='store_true')
 args = parser.parse_args()
 
 VERBOSE = args.verbosity
-print 'verbose es: ',VERBOSE
+if DEBUG: Debug('verbose es: ',VERBOSE)
 
 
 #Si no es interactiva ponemos los valores a las globales
@@ -1179,6 +1182,17 @@ if args.interactive:
 
 if DEBUG: Debug('DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE)
 
+if ONLYCOUNT:
+    try:
+        WINDOWS_PASS = "dummy"
+        CheckEnvironment()
+        userlist = getListByDate(toDate,fromDate)
+        print "Usuarios entre ",fromDate," y ",toDate," = ",len(userlist)
+    except BaseException,e:
+        print "Error recuperando la cuenta de usuarios: ",e
+        exit(False)
+    exit(True)
+    
 try:
     sesion = Session(sessionId,fromDate,toDate)
 except:
