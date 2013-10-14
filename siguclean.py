@@ -80,13 +80,11 @@ import pickle
 import datetime
 import dateutil.parser
 import re
+import collections
 
 state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR')
 
-
 #FUNCIONES
-import collections
-
 def confirm():
     #Pide confirmacion por teclado
     a = raw_input("Desea continuar S/N (N)")
@@ -164,15 +162,16 @@ def CheckConnections():
     global ORACLE_PASS
     if not ORACLE_PASS:
         ORACLE_PASS = raw_input('     Introduzca la clave de oracle (sigu): ')
-    Print(1,'     comprobando conexion a oracle ... ',end='')
-    try:
-        global oracleCon
-        oracleCon = cx_Oracle.connect('sigu/'+ORACLE_PASS+'@'+ORACLE_SERVER)
-        config.status.oracleCon = True
-        Print(1,"CORRECTO")
-    except:
-        Print(1,"ERROR")
-        config.status.oracleCon = False
+    if ORACLE_PASS != "dummy":
+        Print(1,'     comprobando conexion a oracle ... ',end='')
+        try:
+            global oracleCon
+            oracleCon = cx_Oracle.connect('sigu/'+ORACLE_PASS+'@'+ORACLE_SERVER)
+            config.status.oracleCon = True
+            Print(1,"CORRECTO")
+        except:
+            Print(1,"ERROR")
+            config.status.oracleCon = False
 
 def get_mount_point(algo,exclude_regex):
     "Devuelve el punto de montaje que contiene algo en el export"
@@ -371,11 +370,24 @@ def getListByDate(toDate , fromDate='1900-01-01'):
     except BaseException,e:
         Print(0,"ERROR: Error recuperando la lista de usuarios")
         if DEBUG: Debug("DEBUG-ERROR: (getListByDate): ",e)
+        return None
     #Convertimos para quitar tuplas
     userList = [x[0] for x in tmpList]        
     config.status.userList = True
     return userList
-
+    
+def isArchived(user):
+    try:
+        cursor = oracleCon.cursor()
+        #Llamo a la función uf_st_ultima
+        ret = cursor.callfunc('UF_ST_ULTIMA',cx_Oracle.STRING,user)
+        print "RET: ",ret
+        cursor.close()    
+        return ret
+    except BaseException,e:
+        if DEBUG: Debug("DEBUG-ERROR: (isArchived) ",e)
+        return False
+        
 def hasCuentaNT(cuenta):
     import ldap 
     statAD = False
@@ -395,7 +407,10 @@ def hasCuentaNT(cuenta):
                                 filtro,
                                 None)
             result_type,tupla = ldapCon.result(result_id,1)
-            statAD = True
+            if len(tupla) == 1:
+                statAD = False
+            else:
+                statAD = True
         except:
             statAD = False
             
@@ -598,7 +613,13 @@ class Session(object):
         if not self.userList:
             for account in self.accountList:
                 user = User(account)
-                self.userList.append(user) 
+                if user.exclude:
+                    self.log.writeFailed(user.cuenta)
+                    #Generamos y grabamos la razon del fallo
+                    cad = user.cuenta+"\t"+user.failreason
+                    self.log.writeFailReason(cad)
+                else:
+                    self.userList.append(user) 
         #Insertamos sesion en BBDD
         self.bbddInsert()
         #Proceso las entradas
@@ -859,13 +880,21 @@ class User(object):
             return
         except:
             pass
+        self.exclude = False        
         self.dn = None
         self.failreason = None
         self.cuenta = cuenta
         if TEST:
             self.homedir = cuenta
         else:
-            self.homedir = os.path.basename(ldapFromSigu(cuenta,'homedirectory'))
+            try:            
+                self.homedir = os.path.basename(ldapFromSigu(cuenta,'homedirectory'))
+            except BaseException,e:
+                Print(0,"ERROR: (__init_ user) Exception: ",e)
+                Print(0,"Exluimos el usuario: ",self.cuenta)
+                self.failreason = "NOTHOMEDIRINLDAP"
+                self.exclude = True
+                return
         self.storage = []
         self.rootpath = ''
         self.cuentas = self.listCuentas()
@@ -1033,104 +1062,69 @@ class User(object):
 
 import cmd        
 class shell(cmd.Cmd):
-    def do_check(self, line):
-        CheckEnvironment()
-        
-    def do_getusers(self, line):
-        global userList
-        if fromDate != '':
-            userList = getListByDate(toDate,fromDate)
-        else:
-            userList = getListByDate(toDate)
-        f = open('./lista.cancelados','w')
-        for user in userList:
-            f.writelines(user+'\n')
-        f.close()
-        Print(1,"\nEl numero de usuarios a borrar es ",len(userList))
-        
-    def do_params(self, line):
-        EnterParameters()
-    
-    def do_printusers(self, line):
-        imprime(userList) 
-        
-    def do_quit(self, line):
-        return True
+    def parse(self,line):
+        return line.split()
+    def do_count(self,line):
+        """
+        Devuelve el numero de usuarios entre dos fechas
+        <count fromDate toDate>
+        """
+        try:
+            fromDate,toDate = self.parse(line)
+            global WINDOWS_PASS
+            WINDOWS_PASS = "dummy"
+            CheckEnvironment()
+            userlist = getListByDate(toDate,fromDate)
+            print "Usuarios entre ",fromDate," y ",toDate," = ",len(userlist)
+        except BaseException,e:
+            print "Error recuperando la cuenta de usuarios: ",e
 
-    def do_status(self,line):
-        config.status.show()
-        Print(1,"El estado OK es ",config.status.ok())
-    
-    def do_dnfromuser(self,line):
-        status,dn,adObject,result_type = dnFromUser(line)
-        if status:
-            Print(1,dn)
-        else:
-            Print(1,"ERROR; resultype:",result_type,"Dn: ",dn)
-        
-    def do_printdns(self,line):
-        for user in userList:
-            status,dn,adObject,result_type = dnFromUser(user)
-            if status:
-                Print(1,dn)
-            else:
-                Print(1,"ERROR; resultype:",result_type,"Dn: ",dn)
-    
-    def do_showuser(self,line):
-        usuario = User(line)
-        usuario.show()
-
-    def do_checkuser(self,line):
-        usuario = User(line)
-        status = usuario.check()
-        usuario.showstorage()
-        Print(1,"El estado del usuario para borrar es: ",status)
-        
-    def do_archive(self,line):
-        usuario = User(line)
-        usuario.archive(config.TARDIR)
-
-    def do_unarchive(self,line):
-        usuario = User(line)
-        usuario.unarchive(config.TARDIR)
-
-    def do_startsession(self,line):
-        if DEBUG: Debug("DEBUG-INFO: sessionID ",sessionId)
-        ses = Session(sessionId,fromDate,toDate)
-        ses.start()
-
-    def do_archivedn(self,line):
-        usuario = User(line)
-        if not usuario.archiveDN(config.TARDIR):
-            print 'ERROR ARCHIVANDO DN'
-        
-    def do_deletedn(self,line):
-        usuario = User(line)
-        if not usuario.deleteDN():
-            print 'ERROR BORRANDO DN'
-    
-    def do_insertdn(self,line):
-        usuario = User(line)
-        if not usuario.insertDN( config.TARDIR):
-            print 'ERROR INSERTANDO DN'
-    
-    def do_human2size(self,line):
-        ret = humanToSize(line)
-        if ret:
-            print ret
-        else:
-            print line,' no es traducible'
+    def do_isarchived(self,line):
+        """
+        Devuelve si una cuenta tiene estado archivado
+        <isarchived usuario>
+        """
+        try:
+            global WINDOWS_PASS
+            WINDOWS_PASS = "dummy"
+            CheckEnvironment()
+            print isArchived(line)
+        except BaseException,e:
+            print "Error recuperando el estado de archivado",e
+      
     def do_hascuentant(self,line):
-        global NTCHECK
-        NTCHECK = line.split()[1]     
-        print hasCuentaNT(line.split()[0])
-
-    def do_ldapfromsigu(self,line):
-        print ldapFromSigu(line.split()[0],line.split()[1])
-        
-    def do_bbddsesion(self,line):
-        ses = Session(sessionId,fromDate,toDate)
-        ses.bbddInsert()        
+        """
+        Comprueba si un usuario tiene cuenta NT
+        <hascuentant usuario>
+        """
+        try:
+            global WINDOWS_PASS
+            global ORACLE_PASS
+            if NTCHECK == 'ad': ORACLE_PASS = "dummy"
+            if NTCHECK == 'sigu': WINDOWS_PASS = 'dummy'
+            CheckEnvironment()
+            print hasCuentaNT(line)," (metodo ",NTCHECK,")"
+        except BaseException,e:
+            print "Error comprobando si ",line," tiene cuenta NT",e  
+            
+    def do_ldapquery(self,line):
+        """
+        Consulta un atributo de ldap para una cuenta dada
+        <ldapquery usuario atributo>
+        """
+        try:
+            global WINDOWS_PASS
+            WINDOWS_PASS = "dummy"
+            CheckEnvironment()
+            user,attr = self.parse(line)
+            ret = ldapFromSigu(user,attr)
+            print ret
+        except BaseException,e:
+            print "Error consultando atributo ldap",e  
+            
+    def do_quit(self,line):
+        print "Hasta luego Lucas ...."
+        exit(True)
         
     def __init__(self):
         cmd.Cmd.__init__(self)
@@ -1159,10 +1153,10 @@ parser.add_argument('--test',help='Para usar solo en el peirodo de pruebas',dest
 parser.add_argument('--debug',help='Imprimir mensajes de depuracion',dest='DEBUG',action='store_true')
 parser.add_argument('--dry-run',help='No realiza ninguna operacion de escritura',dest='DRYRUN',action='store_true')
 parser.add_argument('--soft-run',help='Junto a dry-run, si genera los tars y la insercion en la BBDD',dest='SOFTRUN',action='store_true')
-parser.add_argument('--only-count',help='Devuelve solo el numero de usuarios entre las dos fechas dadas',dest='ONLYCOUNT',action='store_true')
 parser.add_argument('-v','--verbosity',help='Incrementa el detalle de los mensajes',action='count')
 parser.add_argument('-x','--mount-exlude',help='Excluye esta regex de los posibles montajes',dest='MOUNT_EXCLUDE',action='store',default="(?=a)b")
 parser.add_argument('--confirm',help='Pide confirmación antes de realizar determinadas acciones',dest='CONFIRM',action='store_true')
+
 args = parser.parse_args()
 
 VERBOSE = args.verbosity
@@ -1182,16 +1176,6 @@ if args.interactive:
 
 if DEBUG: Debug('DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE)
 
-if ONLYCOUNT:
-    try:
-        WINDOWS_PASS = "dummy"
-        CheckEnvironment()
-        userlist = getListByDate(toDate,fromDate)
-        print "Usuarios entre ",fromDate," y ",toDate," = ",len(userlist)
-    except BaseException,e:
-        print "Error recuperando la cuenta de usuarios: ",e
-        exit(False)
-    exit(True)
     
 try:
     sesion = Session(sessionId,fromDate,toDate)
