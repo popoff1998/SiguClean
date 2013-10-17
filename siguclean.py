@@ -682,8 +682,13 @@ class Session(object):
         self.stats.total = len(self.accountList)
         if haveprogress(): pbar.update(100000)
         #Creo la lista de objetos usuario a partir de la lista de cuentas            
+        pp = 100000
+        ip = 100000/len(self.accountList)
         if not self.userList:
             for account in self.accountList:
+                if haveprogress(): 
+                    pp = pp + ip                
+                    pbar.update(pp)
                 user = User(account,self)
                 if user.exclude:
                     self.log.writeFailed(user.cuenta)
