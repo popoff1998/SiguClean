@@ -15,7 +15,7 @@ VERBOSE = 1
 DRYRUN = False
 SOFTRUN = False
 CONFIRM = False
-ONLYCOUNT = False
+PROGRESS = False
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
@@ -81,10 +81,17 @@ import datetime
 import dateutil.parser
 import re
 import collections
+from progressbar import *
 
 state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR')
 
 #FUNCIONES
+def haveprogress():
+    if PROGRESS and not DEBUG and VERBOSE == 0: 
+        return True
+    else:
+        return False
+        
 def confirm():
     #Pide confirmacion por teclado
     a = raw_input("Desea continuar S/N (N)")
@@ -208,7 +215,7 @@ def CheckMounts():
         Print(1,'     comprobando '+var['fs']+' ...',end='')
         var['val'] = get_mount_point(var['label'],regex)
         if var['val'] != None:
-            Print(1,var['val'])
+            Print(1,"Usando montaje ",var['val'])
             exec("config.status.%s = True" % (var['fs']))
         else:
             exec("config.status.%s = False" % (var['fs']))
@@ -443,11 +450,60 @@ def valueslist(*args,**kwargs):
     cadena = cadena + ')'
     return cadena
 
+
+reason = Enum('NOTINLDAP','NOMANDATORY',"FAILARCHIVE","FAILDELETE","FAILARCHIVEDN","FAILDELETEDN",'UNKNOWN')
+
+def formatReason(user,reason,attr,stats):
+    stats.reason[reason._index] +=1
+    return user+"\t"+reason._key+"\t"+attr
+
 #CLASES
+  
+class Stats(object):
+    "Clase para llevar las estadísticas de una sesion"
+    def __init__(self,session):
+        self.session = session
+        self.total = 0
+        self.correctos = 0
+        self.failed = 0
+        self.rollback = 0
+        self.norollback = 0
+        self.skipped = 0
+        self.inicio = datetime.datetime.now()
+        self.fin = None
+        self.reason = [0] * len(reason)
+        
+    def show(self):
+        Print(0,"-------------------------------")
+        Print(0,"ESTADISTICAS DE LA SESION")
+        Print(0,"-------------------------------")
+        Print(0,"Total:\t\t",self.total)
+        Print(0,"Correctos:\t",self.correctos)
+        Print(0,"Incorrectos:\t",self.total - self.correctos)
+
+        Print(0,"\n--- Detalles de fallos ---\n")
+        Print(0,"Failed:\t\t",self.failed)
+        Print(0,"Rollback:\t",self.rollback)
+        Print(0,"Norollback:\t",self.norollback)
+        Print(0,"Skip:\t\t",self.skipped)
+        Print(0,"Suma:\t\t",self.failed+self.rollback+self.norollback+self.skipped)
+
+        Print(0,"\n--- Razones del fallo ---\n")
+        i = 0        
+        for r in self.reason:
+            Print(0,reason[i],":\t",r)
+            i += 1
+            
+        Print(0,"\n--- Rendimiento ---\n")
+        Print(0,"Inicio:\t\t",self.inicio.strftime('%d-%m-%y %H:%M:%S'))
+        Print(0,"Fin\t\t",self.fin.strftime('%d-%m-%y %H:%M:%S'))
+        elapsed = self.fin - self.inicio
+        Print(0,"Elapsed:\t",elapsed)
+        Print(0,"Rendimiento:\t",(self.total - self.skipped)/elapsed.seconds," users/sec")        
 
 class Log(object):
+    "Clase que proporciona acceso a los logs"
     def __init__(self,session):
-        
         self.session = session
         self.fUsersDone = open(session.tardir+'/users.done','w')
         self.fUsersFailed = open(session.tardir+'/users.failed','w')
@@ -462,10 +518,12 @@ class Log(object):
     def writeDone(self,string):
         self.fUsersDone.writelines(string+"\n")
         self.fUsersDone.flush()
+        self.session.stats.correctos += 1
         
     def writeFailed(self,string):
         self.fUsersFailed.writelines(string+"\n")
         self.fUsersFailed.flush()
+        self.session.stats.failed += 1
         
     def writeFailReason(self,string):
         self.fFailReason.writelines(string+"\n")
@@ -474,15 +532,18 @@ class Log(object):
     def writeRollback(self,string):
         self.fUsersRollback.writelines(string+"\n")
         self.fUsersRollback.flush()
-
+        self.session.stats.rollback += 1
+        
     def writeNoRollback(self,string):
         self.fUsersNoRollback.writelines(string+"\n")
         self.fUsersNoRollback.flush()
-
+        self.session.stats.norollback += 1
+        
     def writeSkipped(self,string):
         self.fUsersSkipped.writelines(string+"\n")
         self.fUsersSkipped.flush()
-
+        self.session.stats.skipped +=1
+        
     def writeLog(self,string,newline):
         trail = "\n" if newline else ""
         self.fLogfile.write(string + trail)
@@ -498,6 +559,7 @@ class Log(object):
             print "Error de valor"
         except AttributeError,e:
             print "Error de atributo: ",e            
+
     def writeIterable(self,fHandle,iterable):
         line = "\n".join(iterable)
         line = line+"\n"          
@@ -508,21 +570,23 @@ class Session(object):
     
     def abort(self,severity):
         "Funcion que lleva el control sobre el proceso de abortar"
+
+        if EXTRADEBUG: Debug("ABORTALWAYS ES: ",ABORTALWAYS)
         if ABORTLIMIT == 0: 
-            self.log.writeLog('ABORT: No abortamos porque ABORTLIMIT es 0',True)
+            Print(0,'ABORT: No abortamos porque ABORTLIMIT es 0')
             return
                 
-        if ABORTALWAYS:
-            self.log.writeLog('ABORT: Error y ABORTALWAYS es verdadero',True)
+        if ABORTALWAYS is True:
+            Print(0,'ABORT: Error y ABORTALWAYS es True')
             exit(False)
 
-        if ABORTINSEVERITY and severity:
-            self.log.writeLog('ABORT: Error con severidad y ABORTINSEVERITY es verdadero',True)
+        if ABORTINSEVERITY is True and severity is True:
+            Print(0,'ABORT: Error con severidad y ABORTINSEVERITY es True')
             exit(False)
             
         self.abortCount = self.abortCount + 1
         if self.abortCount > self.abortLimit:
-            self.log.writeLog('ABORT: Alcanzada la cuenta de errores para abort',True)
+            Print(0,'ABORT: Alcanzada la cuenta de errores para abort')
             exit(False)
                     
         
@@ -530,15 +594,20 @@ class Session(object):
         "Funcion que controla si abortamos o no y gestiona los logs"
         if rollback:
             if user.rollback():
+                if DEBUG: Debug("DEBUG-INFO: Rollback exitoso de ",user.cuenta)
                 self.log.writeRollback(user.cuenta)
                 self.abort(False)
             else:
+                if DEBUG: Debug("DEBUG-WARNING: Rollback fallido de ",user.cuenta)
                 self.log.writeNoRollback(user.cuenta)
                 self.abort(True)
-        self.log.writeFailed(user.cuenta)
+        else:
+            self.log.writeFailed(user.cuenta)
         #Generamos y grabamos la razon del fallo
-        cad = user.cuenta+"\t"+user.failreason
-        self.log.writeFailReason(cad)
+        if not user.failreason:
+            self.log.writeFailReason(formatReason(user.cuenta,reason.UNKNOWN,"----",self.stats))
+        else:
+            self.log.writeFailReason(user.failreason)
         return False
             
     def __init__(self,sessionId,fromDate,toDate):
@@ -571,6 +640,7 @@ class Session(object):
             #Abortamos porque no existe el directorio padre de los tars
             Print(0,'ABORT: (session-start) No existe el directorio para tars: ',config.TARDIR)
         self.log = Log(self)
+        self.stats = Stats(self)
         Print(0,'Procesando la sesion ',self.sessionId,' desde ',self.fromDate,' hasta ',self.toDate)
         
     def getaccountList(self):
@@ -603,33 +673,40 @@ class Session(object):
     def start(self):
         #Directorio para TARS
         if DEBUG: Debug('DEBUG-INFO: (session.start) config.TARDIR es: ',config.TARDIR)
-
+        print "VERBOSE: ",VERBOSE,"DEBUG: ",DEBUG,"PROGRESS: ",PROGRESS
+        if haveprogress(): pbar=ProgressBar(widgets=[Percentage()," ",Bar(marker=RotatingMarker())," ",ETA()],maxval=1000000).start()
         #Creo la lista de cuentas
         if not self.accountList:
             self.getaccountList()
         self.log.writeIterable(self.log.fUsersList,self.accountList)
-        
+        self.stats.total = len(self.accountList)
+        if haveprogress(): pbar.update(100000)
         #Creo la lista de objetos usuario a partir de la lista de cuentas            
         if not self.userList:
             for account in self.accountList:
-                user = User(account)
+                user = User(account,self)
                 if user.exclude:
                     self.log.writeFailed(user.cuenta)
                     #Generamos y grabamos la razon del fallo
-                    cad = user.cuenta+"\t"+user.failreason
-                    self.log.writeFailReason(cad)
+                    self.log.writeFailReason(formatReason(user.cuenta,reason.NOTINLDAP,"----",self.stats))
                 else:
                     self.userList.append(user) 
+        if haveprogress(): pbar.update(200000)
         #Insertamos sesion en BBDD
         self.bbddInsert()
         #Proceso las entradas
         skip = False
+        pp = 200000
+        ip = 800000/len(self.userList)
         for user in self.userList:
+            if haveprogress(): 
+                pp = pp + ip                
+                pbar.update(pp)
             if skip:
                 self.log.writeSkipped(user.cuenta)
                 continue
             #Chequeamos ...
-            if DEBUG: Debug("DEBUG-INFO: *** PROCESANDO USUARIO ",user.cuenta," ***")
+            Print(1,"*** PROCESANDO USUARIO ",user.cuenta," ***")
             if not user.check():
                 if not self.die(user,False):continue
             #... Archivamos ...
@@ -643,10 +720,10 @@ class Session(object):
             if 'WINDOWS' in user.cuentas:
                 #... Almacenamos el DN ...
                 if not user.archiveDN(self.tardir):
-                    if not self.die(user,False): continue
+                    if not self.die(user,True): continue
                 #... y borramos el DN            
                 if not user.deleteDN():
-                    if not self.die(user,False):
+                    if not self.die(user,True):
                         user.borraCuentaWindows()                        
                         continue
             #Escribimos el registro de usuario archivado
@@ -664,6 +741,8 @@ class Session(object):
                 if self.tarsizes > MAXSIZE:
                     skip = True
         Print(1,'Tamaño de tars de la session ',self.sessionId,' es ',sizeToHuman(self.tarsizes))
+        self.stats.fin = datetime.datetime.now()
+        self.stats.show()
         
 class Storage(object):
     
@@ -837,7 +916,7 @@ class Storage(object):
 class User(object):
     global status    
     instancias = {}
-    def __new__(cls,name):
+    def __new__(cls,name,parent):
         if name in User.instancias:
             return User.instancias[name]
         self = object.__new__(cls)
@@ -851,10 +930,15 @@ class User(object):
         for storage in self.storage:
             if not storage.exist() and storage.mandatory:
                 status = False
-                self.failreason = "NOTEXIST\t"+storage.key+"\tMANDATORY"
+                self.failreason = formatReason(self.cuenta,reason.NOMANDATORY,storage.key,self.parent.stats)
                 if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," no ha pasado el chequeo")
                 break
         return status
+        
+    def insertArchiveRecord(self):
+        """Esta funcion es dummy pues con los datos de sigu se puede inferir si
+        un usuario esta archivado o no"""
+        return True
         
     def borraCuentaWindows(self):
         "Borra la cuenta windows de la BBDD sigu"
@@ -873,15 +957,17 @@ class User(object):
         else:
             return ("LINUX","MAIL")
             
-    def __init__(self,cuenta):
+    def __init__(self,cuenta,parent):
         try:
             dummy = self.cuenta
             if DEBUG: Debug("DEBUG-WARNING: (user.__init__) YA EXISTIA USUARIO ",self.cuenta, " VUELVO DE INIT")
             return
         except:
             pass
+        self.parent = parent        
         self.exclude = False        
         self.dn = None
+        self.adObject = None
         self.failreason = None
         self.cuenta = cuenta
         if TEST:
@@ -890,14 +976,13 @@ class User(object):
             try:            
                 self.homedir = os.path.basename(ldapFromSigu(cuenta,'homedirectory'))
             except BaseException,e:
-                Print(0,"ERROR: (__init_ user) Exception: ",e)
-                Print(0,"Exluimos el usuario: ",self.cuenta)
-                self.failreason = "NOTHOMEDIRINLDAP"
+                self.failreason = reason.NOTINLDAP
                 self.exclude = True
                 return
         self.storage = []
         self.rootpath = ''
         self.cuentas = self.listCuentas()
+        paseporaqui = False
         for c in self.cuentas:
             #relleno el diccionario storage
             for m in MOUNTS:
@@ -920,11 +1005,16 @@ class User(object):
                         if status:
                             self.dn = dn
                         else:
+                            Print(0,"El usuario ",self.cuenta,"no tiene DN en AD y debería tenerla")
                             self.dn = False                       
+                        if DEBUG and not paseporaqui: 
+                            Debug("DEBUG-INFO: Usuario: ",self.cuenta," DN: ",self.dn)
+                            paseporaqui = True
                     storage = Storage(sto_key,sto_path,sto_link,m['mandatory'],self)
                     self.storage.append(storage)
         #Rellenamos el dn
-        status,self.dn,self.adObject,result_type = dnFromUser(self.cuenta)
+        if self.dn:        
+            status,self.dn,self.adObject,result_type = dnFromUser(self.cuenta)
 
     def deleteStorage(self):
         "Borra todos los storages del usuario"
@@ -933,6 +1023,7 @@ class User(object):
                 continue
             else:
                 if DEBUG: Debug("DEBUG-ERROR: (user.deleteStorage) user:",self.cuenta," Storage: ",storage.key)
+                self.failreason = formatReason(self.cuenta,reason.FAILDELETE,storage.key,self.parent.stats)
                 return False
         return True
         
@@ -983,7 +1074,7 @@ class User(object):
         for storage in self.storage:
             if not storage.archive(self.rootpath) and storage.mandatory: 
                 if DEBUG: Debug("DEBUG-INFO: (user.archive) mandatory de ",storage.key," es ",storage.mandatory)
-                self.failreason = "STORAGE\t"+storage.key+"\t"+storage.state  
+                self.failreason = formatReason(self.cuenta,reason.FAILARCHIVE,storage.key,self.parent.stats)
                 ret = False
                 break
             else:
@@ -1006,12 +1097,14 @@ class User(object):
         "Usando pickle archiva el objeto DN de AD"
         #Vemos si rootpath existe
         if not self.rootpath: self.getRootpath(tardir)
+        if not self.adObject: return False
         try:
             adFile = open(self.rootpath+'/'+self.cuenta+'.dn','w')
             pickle.dump(self.adObject,adFile)
             adFile.close()
             return True
-        except:
+        except BaseException,e:
+            self.failreason = formatReason(self.cuenta,reason.FAILARCHIVEDN,self.dn,self.parent.stats)
             return False
             
     def deleteDN(self):
@@ -1024,7 +1117,8 @@ class User(object):
                 ldapCon.delete_s(self.dn)                
                 return True
             except ldap.LDAPError, e:
-                Print(0,e)
+                Print(0,"Error borrando DN usuario ",self.cuenta," ",e)
+                self.failreason = formatReason(self.cuenta,reason.FAILDELETEDN,self.dn,self.parent.stats)
         return False
     
     def insertDN(self,tardir):
@@ -1154,6 +1248,7 @@ parser.add_argument('--debug',help='Imprimir mensajes de depuracion',dest='DEBUG
 parser.add_argument('--dry-run',help='No realiza ninguna operacion de escritura',dest='DRYRUN',action='store_true')
 parser.add_argument('--soft-run',help='Junto a dry-run, si genera los tars y la insercion en la BBDD',dest='SOFTRUN',action='store_true')
 parser.add_argument('-v','--verbosity',help='Incrementa el detalle de los mensajes',action='count')
+parser.add_argument('--progress',help='Muestra indicacion del progreso',dest='PROGRESS',action='store_true')
 parser.add_argument('-x','--mount-exlude',help='Excluye esta regex de los posibles montajes',dest='MOUNT_EXCLUDE',action='store',default="(?=a)b")
 parser.add_argument('--confirm',help='Pide confirmación antes de realizar determinadas acciones',dest='CONFIRM',action='store_true')
 
@@ -1179,8 +1274,9 @@ if DEBUG: Debug('DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' toda
     
 try:
     sesion = Session(sessionId,fromDate,toDate)
-except:
+except BaseException,e:
     Print(0,'ABORT: No se ha dado nombre a la sesion')
+    print "ERROR: ",e
     exit(False)
 CheckEnvironment()
 sesion.start()
