@@ -326,7 +326,10 @@ def Debug(*args,**kwargs):
     #Si tenemos definida la sesion lo grabamos en el fichero
     if config.session:
         if not fDebug:
-            fDebug = open(config.session.tardir+"/debug","w")
+            #Creamos el directorio logs si no existe
+            if not os.path.isdir(config.session.tardir+"/logs"):
+                os.mkdir(config.session.tardir+"/logs",0777)            
+            fDebug = open(config.session.tardir+"/logs/debug","w")
         if kwargs != {}:
             trail = kwargs['end']
         else:
@@ -509,16 +512,20 @@ class Log(object):
     "Clase que proporciona acceso a los logs"
     def __init__(self,session):
         self.session = session
-        self.fUsersDone = open(session.tardir+'/users.done','w')
-        self.fUsersFailed = open(session.tardir+'/users.failed','w')
-        self.fUsersRollback = open(session.tardir+'/users.rollback','w')
-        self.fUsersNoRollback = open(session.tardir+'/users.norollback','w')
-        self.fUsersSkipped = open(session.tardir+'/users.skipped','w')
-        self.fUsersExcluded = open(session.tardir+'/users.excluded','w')
-        self.fLogfile = open(session.tardir+'/logfile','w')
-        self.fUsersList = open(session.tardir+'/users.list','w')
-        self.fBbddLog = open(session.tardir+'/bbddlog','w')
-        self.fFailReason = open(session.tardir+'/failreason',"w")
+        #Creamos el directorio logs si no existe
+        if not os.path.isdir(session.tardir+"/logs"):
+            os.mkdir(session.tardir+"/logs",0777)
+        #Abrimos todos los ficheros
+        self.fUsersDone = open(session.tardir+'/logs/users.done','w')
+        self.fUsersFailed = open(session.tardir+'/logs/users.failed','w')
+        self.fUsersRollback = open(session.tardir+'/logs/users.rollback','w')
+        self.fUsersNoRollback = open(session.tardir+'/logs/users.norollback','w')
+        self.fUsersSkipped = open(session.tardir+'/logs/users.skipped','w')
+        self.fUsersExcluded = open(session.tardir+'/logs/users.excluded','w')
+        self.fLogfile = open(session.tardir+'/logs/logfile','w')
+        self.fUsersList = open(session.tardir+'/logs/users.list','w')
+        self.fBbddLog = open(session.tardir+'/logs/bbddlog','w')
+        self.fFailReason = open(session.tardir+'/logs/failreason',"w")
         
     def writeDone(self,string):
         self.fUsersDone.writelines(string+"\n")
