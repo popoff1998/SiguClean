@@ -387,13 +387,15 @@ def isArchived(user):
     try:
         cursor = oracleCon.cursor()
         #Llamo a la función uf_st_ultima
-        ret = cursor.callfunc('UF_ST_ULTIMA',cx_Oracle.STRING,user)
-        print "RET: ",ret
+        ret = cursor.callfunc('UF_ST_ULTIMA',cx_Oracle.STRING,[user])
         cursor.close()    
-        return ret
+        if ret == "0":
+            return True
+        else:
+            return False
     except BaseException,e:
         if DEBUG: Debug("DEBUG-ERROR: (isArchived) ",e)
-        return False
+        return None
         
 def hasCuentaNT(cuenta):
     import ldap 
@@ -451,7 +453,7 @@ def valueslist(*args,**kwargs):
     return cadena
 
 
-reason = Enum('NOTINLDAP','NOMANDATORY',"FAILARCHIVE","FAILDELETE","FAILARCHIVEDN","FAILDELETEDN",'UNKNOWN')
+reason = Enum('NOTINLDAP','NOMANDATORY',"FAILARCHIVE","FAILDELETE","FAILARCHIVEDN","FAILDELETEDN",'UNKNOWN',"ISARCHIVED","UNKNOWNARCHIVED")
 
 def formatReason(user,reason,attr,stats):
     stats.reason[reason._index] +=1
@@ -466,6 +468,7 @@ class Stats(object):
         self.total = 0
         self.correctos = 0
         self.failed = 0
+        self.excluded = 0
         self.rollback = 0
         self.norollback = 0
         self.skipped = 0
@@ -485,10 +488,11 @@ class Stats(object):
         Print(0,"Failed:\t\t",self.failed)
         Print(0,"Rollback:\t",self.rollback)
         Print(0,"Norollback:\t",self.norollback)
+        Print(0,"Excluded:\t",self.excluded)
         Print(0,"Skip:\t\t",self.skipped)
-        Print(0,"Suma:\t\t",self.failed+self.rollback+self.norollback+self.skipped)
+        Print(0,"Suma:\t\t",self.failed+self.rollback+self.norollback+self.skipped+self.excluded)
 
-        Print(0,"\n--- Razones del fallo ---\n")
+        Print(0,"\n--- Razones del fallo/exclusion ---\n")
         i = 0        
         for r in self.reason:
             Print(0,reason[i],":\t",r)
@@ -510,6 +514,7 @@ class Log(object):
         self.fUsersRollback = open(session.tardir+'/users.rollback','w')
         self.fUsersNoRollback = open(session.tardir+'/users.norollback','w')
         self.fUsersSkipped = open(session.tardir+'/users.skipped','w')
+        self.fUsersExcluded = open(session.tardir+'/users.excluded','w')
         self.fLogfile = open(session.tardir+'/logfile','w')
         self.fUsersList = open(session.tardir+'/users.list','w')
         self.fBbddLog = open(session.tardir+'/bbddlog','w')
@@ -524,6 +529,11 @@ class Log(object):
         self.fUsersFailed.writelines(string+"\n")
         self.fUsersFailed.flush()
         self.session.stats.failed += 1
+        
+    def writeExcluded(self,string):
+        self.fUsersExcluded.writelines(string+"\n")
+        self.fUsersExcluded.flush()
+        self.session.stats.excluded += 1
         
     def writeFailReason(self,string):
         self.fFailReason.writelines(string+"\n")
@@ -602,7 +612,10 @@ class Session(object):
                 self.log.writeNoRollback(user.cuenta)
                 self.abort(True)
         else:
-            self.log.writeFailed(user.cuenta)
+            if user.exclude:
+                self.log.writeExcluded(user.cuenta)                
+            else:
+                self.log.writeFailed(user.cuenta)
         #Generamos y grabamos la razon del fallo
         if not user.failreason:
             self.log.writeFailReason(formatReason(user.cuenta,reason.UNKNOWN,"----",self.stats))
@@ -690,8 +703,9 @@ class Session(object):
                     pp = pp + ip                
                     pbar.update(pp)
                 user = User(account,self)
+                #Manejamos la exclusion por no estar en ldap
                 if user.exclude:
-                    self.log.writeFailed(user.cuenta)
+                    self.log.writeExcluded(user.cuenta)
                     #Generamos y grabamos la razon del fallo
                     self.log.writeFailReason(formatReason(user.cuenta,reason.NOTINLDAP,"----",self.stats))
                 else:
@@ -930,7 +944,23 @@ class User(object):
 
     def check(self):
         """Metodo que chequea los storages mandatory del usuario
+        y si el usuario fue previamente archivado o no
         Asumo que la DN está bien porque acabo de buscarla."""
+        if isArchived(self.cuenta) is True:
+            status = False
+            self.failreason = formatReason(self.cuenta,reason.ISARCHIVED,"---",self.parent.stats) 
+            if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," ya estaba archivado")
+            self.exclude = True            
+            return status
+
+        if isArchived(self.cuenta) is None:
+            status = False
+            self.failreason = formatReason(self.cuenta,reason.UNKNOWNARCHIVED,"---",self.parent.stats) 
+            if DEBUG: Debug("DEBUG-ERROR: (user.check) Error al comprobar estado de archivado de ",self.cuenta)
+            self.exclude = True            
+            return status
+
+        #El usuario no esta archivado, compruebo sus storages            
         status = True
         for storage in self.storage:
             if not storage.exist() and storage.mandatory:
