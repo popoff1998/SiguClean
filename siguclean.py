@@ -16,6 +16,7 @@ DRYRUN = False
 SOFTRUN = False
 CONFIRM = False
 PROGRESS = False
+FROMFILE = None
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
@@ -130,7 +131,7 @@ def CheckModules():
         import ldap
         Print(1,"CORRECTO")
     except:
-        print(0,"ABORT: No existe el modulo python-ldap, instalelo")
+        Print(0,"ABORT: No existe el modulo python-ldap, instalelo")
         exit(False)
 
     #cx_Oracle
@@ -140,7 +141,7 @@ def CheckModules():
         import cx_Oracle
         Print(1,"CORRECTO")
     except:
-        print('ABORT: No existe el modulo cx_Oracle, instalelo')
+        Print('ABORT: No existe el modulo cx_Oracle, instalelo')
         exit(False)
     
 def CheckConnections():
@@ -456,7 +457,7 @@ def valueslist(*args,**kwargs):
     return cadena
 
 
-reason = Enum('NOTINLDAP','NOMANDATORY',"FAILARCHIVE","FAILDELETE","FAILARCHIVEDN","FAILDELETEDN",'UNKNOWN',"ISARCHIVED","UNKNOWNARCHIVED")
+reason = Enum('NOTINLDAP','NOMANDATORY',"FAILARCHIVE","FAILDELETE","FAILARCHIVEDN","FAILDELETEDN",'UNKNOWN',"ISARCHIVED","UNKNOWNARCHIVED","NODNINAD")
 
 def formatReason(user,reason,attr,stats):
     stats.reason[reason._index] +=1
@@ -666,8 +667,28 @@ class Session(object):
     def getaccountList(self):
         if TEST:
             self.accountList = ['games','news','uucp','pepe']
+            return True
         else:
-            self.accountList = getListByDate(self.toDate,self.fromDate)
+            if FROMFILE is not None:
+                #Leo la lista de usuarios de FROMFILE
+                if os.path.exists(FROMFILE):
+                    try:
+                        f = open(FROMFILE,"r")
+                        #Leemos los usuarios quitando el \n final
+                        self.accountList = [line.strip() for line in f]
+                        f.close()
+                        return True
+                    except BaseException,e:
+                        if DEBUG: Debug("Error leyendo FROMFILE: ",e)
+                        Print(0,"Error leyendo FROMFILE: ",FROMFILE)
+                        return False
+                else:
+                    Print(0,"El fichero FROMFILE ",FROMFILE," no existe")
+                    return False
+            else:
+                #Recupero la lista de usuarios de SIGU
+                self.accountList = getListByDate(self.toDate,self.fromDate)
+                return True
             
     def bbddInsert(self):
         """ Inserta un registro de archivado en la BBDD """
@@ -697,7 +718,12 @@ class Session(object):
         if haveprogress(): pbar=ProgressBar(widgets=[Percentage()," ",Bar(marker=RotatingMarker())," ",ETA()],maxval=1000000).start()
         #Creo la lista de cuentas
         if not self.accountList:
-            self.getaccountList()
+            ret = self.getaccountList()
+        #Si ret es False ha fallado la recuperacion de la lista de cuentas
+        if not ret:
+            Print(0,"ERROR: No he podido recuperar la lista de usuarios. Abortamos ...")
+            exit(False)
+        #Comenzamos el procesamiento
         self.log.writeIterable(self.log.fUsersList,self.accountList)
         self.stats.total = len(self.accountList)
         if haveprogress(): pbar.update(100000)
@@ -746,10 +772,12 @@ class Session(object):
             if 'WINDOWS' in user.cuentas:
                 #... Almacenamos el DN ...
                 if not user.archiveDN(self.tardir):
-                    if not self.die(user,True): continue
+                    if DEBUG: Debug("DEBUG-WARNING: Error archivando DN de ",user.cuenta)
+                    if not self.die(user,False): continue
                 #... y borramos el DN            
                 if not user.deleteDN():
-                    if not self.die(user,True):
+                    if DEBUG: Debug("DEBUG-WARNING: Error archivando DN de ",user.cuenta)
+                    if not self.die(user,False):
                         user.borraCuentaWindows()                        
                         continue
             #Escribimos el registro de usuario archivado
@@ -1139,7 +1167,9 @@ class User(object):
         "Usando pickle archiva el objeto DN de AD"
         #Vemos si rootpath existe
         if not self.rootpath: self.getRootpath(tardir)
-        if not self.adObject: return False
+        if not self.adObject: 
+            self.failreason = formatReason(self.cuenta,reason.NODNINAD,"---",self.parent.stats)
+            return False
         try:
             adFile = open(self.rootpath+'/'+self.cuenta+'.dn','w')
             pickle.dump(self.adObject,adFile)
@@ -1293,6 +1323,7 @@ parser.add_argument('-v','--verbosity',help='Incrementa el detalle de los mensaj
 parser.add_argument('--progress',help='Muestra indicacion del progreso',dest='PROGRESS',action='store_true')
 parser.add_argument('-x','--mount-exlude',help='Excluye esta regex de los posibles montajes',dest='MOUNT_EXCLUDE',action='store',default="(?=a)b")
 parser.add_argument('--confirm',help='Pide confirmación antes de realizar determinadas acciones',dest='CONFIRM',action='store_true')
+parser.add_argument('--fromfile',help='Nombre de fichero de entrada con usuarios',dest='FROMFILE',action='store',default=None)
 
 args = parser.parse_args()
 
