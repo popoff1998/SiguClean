@@ -7,15 +7,17 @@ Created on Mon May 20 09:09:42 2013
 """
 #from __future__ import print_function
 
-#Defines
+#Defines (globales)
 TEST = False
 DEBUG = False
+CHECKED = False
 EXTRADEBUG = False
 VERBOSE = 1
 DRYRUN = False
 SOFTRUN = False
 CONFIRM = False
 PROGRESS = False
+IGNOREARCHIVED = False
 FROMFILE = None
 
 #VARIABLES DE CONFIGURACION
@@ -23,6 +25,7 @@ Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTAD
 Q_GET_CUENTA_NT = 'SELECT CCUENTA FROM UT_CUENTAS_NT WHERE CCUENTA ='
 Q_INSERT_STORAGE = 'INSERT INTO UT_ST_STORAGE (IDSESION,CCUENTA,TTAR,NSIZE,CESTADO) VALUES '
 Q_INSERT_SESION = 'INSERT INTO UT_ST_SESION (IDSESION,FSESION,FINICIAL,FFINAL,DSESION) VALUES '
+Q_IGNORE_ARCHIVED ='UF_ST_ULTIMA(CCUENTA) !=\'0\''
 
 #LDAP_SERVER = "ldap://ldap1.priv.uco.es"
 LDAP_SERVER = "ldaps://ucoapp08.uco.es"
@@ -114,10 +117,13 @@ def Pprint(*args):
             print(arg),
 
 def CheckEnvironment():
+    global CHECKED
     Print(1,"PASO1: Comprobando el entorno de ejecucion ...")
-    CheckModules()
-    CheckConnections()
-    CheckMounts()
+    if not CHECKED:
+        CheckModules()
+        CheckConnections()
+        CheckMounts()
+    CHECKED = True
     
     
 def CheckModules():
@@ -372,6 +378,9 @@ def getListByDate(toDate , fromDate='1900-01-01'):
                        '\',\'yyyy-mm-dd\') AND to_date(\''+ toDate +\
                        '\',\'yyyy-mm-dd\')'
     query = Q_GET_BORRABLES + ' AND ' + Q_BETWEEN_DATES
+    if IGNOREARCHIVED is True:
+        Print(1,'INFO: Ignorando los ya archivados')
+        query = query + ' AND ' + Q_IGNORE_ARCHIVED
     if DEBUG: Debug("DEBUG-INFO: (getListByDate) Query:",query)
     try:
         cursor = oracleCon.cursor()
@@ -393,8 +402,8 @@ def isArchived(user):
         #Llamo a la función uf_st_ultima
         ret = cursor.callfunc('UF_ST_ULTIMA',cx_Oracle.STRING,[user])
         cursor.close()    
-        print "RET ES ",ret
         if ret == "0":
+            print "ARCHIVADO: ",user
             return True
         else:
             return False
@@ -464,6 +473,37 @@ def formatReason(user,reason,attr,stats):
     stats.reason[reason._index] +=1
     return user+"\t"+reason._key+"\t"+attr
 
+def filterArchived(userlist):
+    """Filtra de una lista de usuarios dejando solo los que no estan archivados
+    al ser las listas mutables, tenemos tenemos que borrar los elementos de la lista"""
+    for user in list(userlist):
+        print "USUARIO: ",user
+        if isArchived(user):
+            print "EXLUIDO"
+            userlist.remove(user)
+    print "USERLIST EN filter: ",userlist
+
+def fromFile(userlist):
+    if os.path.exists(FROMFILE):
+        try:
+            f = open(FROMFILE,"r")
+            #Leemos los usuarios quitando el \n final
+            userlist.extend([line.strip() for line in f])
+            f.close()
+            #Si tenemos IGNOREARCHIVED filtramos la lista
+            print "USERLIST ANTES DE FILTRAR: ",userlist
+            if IGNOREARCHIVED is True:
+                filterArchived(userlist)
+                print "USERLIST EN FROMFILE: ",userlist
+            return True
+        except BaseException,e:
+            if DEBUG: Debug("Error leyendo FROMFILE: ",e)
+            Print(0,"Error leyendo FROMFILE: ",FROMFILE)
+            return False   
+    else:
+        Print(0,"El fichero FROMFILE ",FROMFILE," no existe")
+        return False             
+            
 #CLASES
   
 class Stats(object):
@@ -672,20 +712,7 @@ class Session(object):
         else:
             if FROMFILE is not None:
                 #Leo la lista de usuarios de FROMFILE
-                if os.path.exists(FROMFILE):
-                    try:
-                        f = open(FROMFILE,"r")
-                        #Leemos los usuarios quitando el \n final
-                        self.accountList = [line.strip() for line in f]
-                        f.close()
-                        return True
-                    except BaseException,e:
-                        if DEBUG: Debug("Error leyendo FROMFILE: ",e)
-                        Print(0,"Error leyendo FROMFILE: ",FROMFILE)
-                        return False
-                else:
-                    Print(0,"El fichero FROMFILE ",FROMFILE," no existe")
-                    return False
+                return fromFile(self.accountList)
             else:
                 #Recupero la lista de usuarios de SIGU
                 self.accountList = getListByDate(self.toDate,self.fromDate)
@@ -1235,16 +1262,29 @@ class shell(cmd.Cmd):
         """
         Devuelve el numero de usuarios entre dos fechas
         <count fromDate toDate>
+        Si tenemos fromfile no hace falta meter las dos fechas
         """
-        try:
-            fromDate,toDate = self.parse(line)
-            global WINDOWS_PASS
-            WINDOWS_PASS = "dummy"
-            CheckEnvironment()
-            userlist = getListByDate(toDate,fromDate)
-            print "Usuarios entre ",fromDate," y ",toDate," = ",len(userlist)
-        except BaseException,e:
-            print "Error recuperando la cuenta de usuarios: ",e
+        global WINDOWS_PASS
+        WINDOWS_PASS = "dummy"
+        CheckEnvironment()
+
+        if FROMFILE is not None:
+            userlist = []
+            ret = fromFile(userlist)
+            print "USERLIST EN COUNT: ",userlist
+            if not ret:
+                print "Error recuperando la cuenta de usuarios de ",FROMFILE
+            else:
+                print "Usuarios de ",FROMFILE," archivables = ",len(userlist)
+            return
+        else:    
+            try:
+                fromDate,toDate = self.parse(line)
+                userlist = getListByDate(toDate,fromDate)
+            except BaseException,e:
+                print "Error recuperando la cuenta de usuarios de SIGU: ",e
+                return
+            print "Usuarios archivables entre ",fromDate," y ",toDate," = ",len(userlist)
 
     def do_isarchived(self,line):
         """
@@ -1312,6 +1352,7 @@ parser.add_argument('-s','--abortinseverity',help='Abortar si se produce un erro
 parser.add_argument('-l','--abortlimit',help='Limite de la cuenta de errores para abortar (0 para no abortar nunca)',dest='ABORTLIMIT',action='store',default='5')
 parser.add_argument('-f','--from',help='Seleccionar usuarios desde esta fecha',dest='fromDate',action='store',default=None)
 parser.add_argument('-t','--to',help='Seleccionar usuarios hasta esta fecha',dest='toDate',action='store',default=None)
+parser.add_argument('--ignore-archived',help='Excluye de la selección las cuentas con estado archivado',dest='IGNOREARCHIVED',action='store_true',default='False')
 parser.add_argument('-m','--maxsize',help='Limite de tamaño del archivado (0 sin limite)',dest='MAXSIZE',action='store',default='0')
 parser.add_argument('-w','--windows-check',help='Metodo de comprobacion de existencia de cuenta windows',choices=['ad','sigu','both'],dest='NTCHECK',action='store',default='sigu')
 parser.add_argument('--win-password',help='Clave del administrador de windows',dest='WINDOWS_PASS',action='store',default=None)
