@@ -393,6 +393,7 @@ def isArchived(user):
         #Llamo a la función uf_st_ultima
         ret = cursor.callfunc('UF_ST_ULTIMA',cx_Oracle.STRING,[user])
         cursor.close()    
+        print "RET ES ",ret
         if ret == "0":
             return True
         else:
@@ -820,7 +821,7 @@ class Storage(object):
         if not self.accesible:
             self.state = state.NOACCESIBLE
             return False
-        self.tarpath = rootpath + '/' + self.parent.cuenta + '_' + self.key + '_' + sessionId + ".tar"
+        self.tarpath = rootpath + '/' + self.parent.cuenta + '_' + self.key + '_' + sessionId + ".tar.bz2"
         Print(1,"Archivando ",self.key," from ",self.path," in ",self.tarpath," ... ")
         try:
             if DRYRUN and not SOFTRUN: 
@@ -1312,18 +1313,19 @@ parser.add_argument('-l','--abortlimit',help='Limite de la cuenta de errores par
 parser.add_argument('-f','--from',help='Seleccionar usuarios desde esta fecha',dest='fromDate',action='store',default=None)
 parser.add_argument('-t','--to',help='Seleccionar usuarios hasta esta fecha',dest='toDate',action='store',default=None)
 parser.add_argument('-m','--maxsize',help='Limite de tamaño del archivado (0 sin limite)',dest='MAXSIZE',action='store',default='0')
-parser.add_argument('-w','--windows-check',help='Metodo de comprobacion de existencia de cuenta windows',choices=['ad','sigu','both'],dest='NTCHECK',action='store',default='ad')
+parser.add_argument('-w','--windows-check',help='Metodo de comprobacion de existencia de cuenta windows',choices=['ad','sigu','both'],dest='NTCHECK',action='store',default='sigu')
 parser.add_argument('--win-password',help='Clave del administrador de windows',dest='WINDOWS_PASS',action='store',default=None)
 parser.add_argument('--sigu-password',help='Clave del usuario sigu',dest='ORACLE_PASS',action='store',default=None)
 parser.add_argument('--test',help='Para usar solo en el peirodo de pruebas',dest='TEST',action='store_true')
 parser.add_argument('--debug',help='Imprimir mensajes de depuracion',dest='DEBUG',action='store_true')
 parser.add_argument('--dry-run',help='No realiza ninguna operacion de escritura',dest='DRYRUN',action='store_true')
 parser.add_argument('--soft-run',help='Junto a dry-run, si genera los tars y la insercion en la BBDD',dest='SOFTRUN',action='store_true')
-parser.add_argument('-v','--verbosity',help='Incrementa el detalle de los mensajes',action='count')
+parser.add_argument('-v',help='Incrementa el detalle de los mensajes',dest='verbosity',action='count')
 parser.add_argument('--progress',help='Muestra indicacion del progreso',dest='PROGRESS',action='store_true')
 parser.add_argument('-x','--mount-exlude',help='Excluye esta regex de los posibles montajes',dest='MOUNT_EXCLUDE',action='store',default="(?=a)b")
 parser.add_argument('--confirm',help='Pide confirmación antes de realizar determinadas acciones',dest='CONFIRM',action='store_true')
 parser.add_argument('--fromfile',help='Nombre de fichero de entrada con usuarios',dest='FROMFILE',action='store',default=None)
+parser.add_argument('--sessiondir',help='Carpeta para almacenar la sesion',dest='TARDIR',action='store',default='/tmp')
 
 args = parser.parse_args()
 
