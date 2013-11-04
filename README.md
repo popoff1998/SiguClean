@@ -94,10 +94,10 @@ En siguclean podemos realizar varias selecciones que afectan al proceso del prog
 
 Los orígenes de storages son los lugares del sistema de ficheros en los que esperamos encontrarnos los storages de los usuarios. En principio existe una lista de diccionarios hardcoded donde se especifican los diferentes filesystem que se usarán. Actualmente la tabla es esta:
 
-`    MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFS','mandatory':True,'val':''},
+**MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFS','mandatory':True,'val':''},
               {'account':'MAIL','fs':'homemail','label':'MAIL','mandatory':True,'val':''},  
               {'account':'WINDOWS','fs':'perfiles','label':'PERFILES','mandatory':False,'val':''},  
-              {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})`
+              {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})`**
               
 Los campos de la misma son:
 
