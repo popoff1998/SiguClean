@@ -22,7 +22,7 @@ Conceptos Clave
     Proceso que deshace los cambios realizados durante el archivado de un usuario. Su objetivo es dejar todo lo relativo a dicho usuario como si no hubiera sido procesado en dicha sesión.
 
 * **sesiondir:**
-    Directorio donde se almacenarán todos los usuarios archivados. La estructura será de una 
+    Directorio donde se almacenarán todos los usuarios archivados. La estructura contendrá una carpeta por cada usuario archivado y una carpeta logs con los ficheros de salida. La carpeta de usuario contendrá tantos tar.bz como storages se archiven aparte de un fichero con un volcado de la DN del usuario de active directory.
 
 Operativa
 ---------
