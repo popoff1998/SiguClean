@@ -11,7 +11,7 @@ Created on Mon May 20 09:09:42 2013
 TEST = False
 DEBUG = False
 CHECKED = False
-EXTRADEBUG = False
+EXTRADEBUG = True
 VERBOSE = 1
 DRYRUN = False
 SOFTRUN = False
@@ -19,6 +19,7 @@ CONFIRM = False
 PROGRESS = False
 IGNOREARCHIVED = False
 FROMFILE = None
+MAXSIZE = 0
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
@@ -33,7 +34,6 @@ BIND_DN = "Administrador@uco.es"
 USER_BASE = "dc=uco,dc=es"
 ORACLE_SERVER='ibmblade47/av10g'
 ALTROOTPREFIX = '0_'
-MAXSIZE = 0
 NTCHECK = 'ad'
 #Claves
 WINDOWS_PASS = None
@@ -91,13 +91,16 @@ state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR
 
 #FUNCIONES
 def haveprogress():
+    """Comprueba si se dan las condiciones de mostrar la barra de progreso"""
+    
     if PROGRESS and not DEBUG and VERBOSE == 0: 
         return True
     else:
         return False
         
 def confirm():
-    #Pide confirmacion por teclado
+    """Pide confirmacion por teclado"""
+    
     a = raw_input("Desea continuar S/N (N)")
     if a == "S":
         return True
@@ -105,11 +108,15 @@ def confirm():
         exit(True)
         
 def iterable(obj):
+    """Comprueba si un objeto es iterable"""
+    
     if isinstance(obj, collections.Iterable):
         return True
     return False
     
 def Pprint(*args):
+    """Imprime de forma bonita algo, teniendo en cuenta si es iterable o no"""
+    
     for arg in args:
         if iterable(arg): 
             pprint(arg),
@@ -117,6 +124,8 @@ def Pprint(*args):
             print(arg),
 
 def CheckEnvironment():
+    """Chequea el entorno de ejecucion (instancia unica)"""
+    
     global CHECKED
     Print(1,"PASO1: Comprobando el entorno de ejecucion ...")
     if not CHECKED:
@@ -127,7 +136,8 @@ def CheckEnvironment():
     
     
 def CheckModules():
-    "Comprueba que son importables los módulos ldap y cx_Oracle"
+    """Comprueba que son importables los módulos ldap y cx_Oracle"""
+    
     Print(1,"  Comprobando modulos necesarios")
 
     #python_ldap
@@ -138,7 +148,7 @@ def CheckModules():
         Print(1,"CORRECTO")
     except:
         Print(0,"ABORT: No existe el modulo python-ldap, instalelo")
-        exit(False)
+        os._exit(False)
 
     #cx_Oracle
     Print(1,'     comprobando modulo conexion a Oracle ... ',end='')    
@@ -148,10 +158,11 @@ def CheckModules():
         Print(1,"CORRECTO")
     except:
         Print('ABORT: No existe el modulo cx_Oracle, instalelo')
-        exit(False)
+        os._exit(False)
     
 def CheckConnections():
-    "Establece las conexiones a ldap y oracle"
+    """Establece las conexiones a ldap y oracle"""
+    
     Print(1,"  Comprobando conexiones")
     import ldap,cx_Oracle
     #LDAP
@@ -188,7 +199,8 @@ def CheckConnections():
             config.status.oracleCon = False
 
 def get_mount_point(algo,exclude_regex):
-    "Devuelve el punto de montaje que contiene algo en el export"
+    """Devuelve el punto de montaje que contiene algo en el export"""
+    
     try:
         with open("/proc/mounts", "r") as ifp:
             for line in ifp:
@@ -209,14 +221,15 @@ def get_mount_point(algo,exclude_regex):
     return None # explicit
     
 def CheckMounts():
-    "Comprueba que los puntos de montaje están accesibles"
+    """Comprueba que los puntos de montaje están accesibles"""
+    
     Print(1,"  Comprobando el acceso a los Datos")
     try:
         regex = re.compile(MOUNT_EXCLUDE)
         if DEBUG: Debug("DEBUG-INFO: Regex de exclusion es ",MOUNT_EXCLUDE," y su valor es ",regex)
     except:
-        Print(0,"La expresion ",MOUNT_EXCLUDE," no es una regex valida, abortamos ...")
-        exit(False)
+        Print(0,"ABORT: La expresion ",MOUNT_EXCLUDE," no es una regex valida, abortamos ...")
+        os._exit(False)
     salgo = False
     for var in MOUNTS:
         Print(1,'     comprobando '+var['fs']+' ...',end='')
@@ -230,11 +243,12 @@ def CheckMounts():
             salgo = True
     if salgo:
         Print(0,'ABORT: Algunos puntos de montaje no estan accesibles')
-        exit(False)
+        os._exit(False)
     if CONFIRM: confirm()
 
 def inputParameter(param,text,mandatory):
-    "Lee un parametro admitiendo que la tecla intro ponga el anterior"
+    """Lee un parametro admitiendo que la tecla intro ponga el anterior"""
+    
     while True:
         prevParam = param
         param = raw_input(text+'['+param+']: ')
@@ -248,7 +262,8 @@ def inputParameter(param,text,mandatory):
             return param
           
 def EnterParameters():
-    "Lee por teclado los parametros de ejecucion"
+    """Lee por teclado los parametros de ejecucion"""
+    
     while True:
         global sessionId,fromDate,toDate
         print "PASO2: Parametros de la sesion ('c' para borrar)"
@@ -267,6 +282,8 @@ def EnterParameters():
             continue
 
 def pager(iterable, page_size):
+    """Funcion paginador"""
+    
     import itertools 
     args = [iter(iterable)] * page_size
     fillvalue = object()
@@ -274,6 +291,8 @@ def pager(iterable, page_size):
         yield (elem for elem in group if elem is not fillvalue)  
 
 def imprime(userList):        
+    """Imprime usando un paginador"""
+    
     my_pager = pager(userList,20)
     for page in my_pager:
         for i in page:
@@ -283,9 +302,11 @@ def imprime(userList):
             break       
         
 def sizeToHuman(size):
+    """Convierte un numero de bytes a formato humano"""
+    
     symbols = ('B','K','M','G','T')
     indice = 0
-    if EXTRADEBUG: Debug("DEBUG-INFO: (sizeToHuman) Size antes de redondear es: ",size )
+    if EXTRADEBUG: Debug("EXTRADEBUG-INFO: (sizeToHuman) Size antes de redondear es: ",size )
     while(True):
         if size < 1024:
             string = str(size)+symbols[indice]
@@ -294,6 +315,8 @@ def sizeToHuman(size):
         indice = indice + 1
         
 def humanToSize(size):
+    """Convierte un tamaño en formato humano a bytes"""
+    
     symbols = ('B','K','M','G','T')
     letter = size[-1:].strip().upper()
     num = size[:-1]
@@ -309,9 +332,13 @@ def humanToSize(size):
         return False
         
 def timeStamp():
+    """Devuelve un timestamp"""
+    
     return '['+str(datetime.datetime.now())+']\t'
     
 def Print(level,*args,**kwargs):
+    """Formatea y archiva los mensajes por pantalla"""
+    
     global VERBOSE
     if not VERBOSE: VERBOSE = 0
     if kwargs != {}:
@@ -326,6 +353,8 @@ def Print(level,*args,**kwargs):
             config.session.log.writeLog(cadena+trail,False)
         
 def Debug(*args,**kwargs):
+    """Formatea y archiva los mensajes de debug"""
+    
     global fDebug
     #Si tenemos verbose o no tenemos sesion sacamos la info por consola tambien
     if VERBOSE>0 or not config.session:
@@ -348,6 +377,8 @@ def Debug(*args,**kwargs):
         fDebug.flush()
     
 def dnFromUser(user):
+    """Devuelve la DN de un usuario de active directory"""
+    
     import ldap 
     
     filtro = "(&(CN="+user+")(!(objectClass=contact)))"  
@@ -364,6 +395,8 @@ def dnFromUser(user):
     return status,dn,tupla,result_type
 
 def ldapFromSigu(cuenta,attr):
+    """Consulta un atributo ldap mediante sigu"""
+    
     Q_LDAP_SIGU = 'select sigu.ldap.uf_leeldap(\''+cuenta+'\',\''+attr+'\') from dual'
     
     cursor = oracleCon.cursor()
@@ -374,6 +407,8 @@ def ldapFromSigu(cuenta,attr):
     return tmpList.strip().split(':')[1].strip() if tmpList else None
     
 def getListByDate(toDate , fromDate='1900-01-01'):
+    """Devuelve una lista de cuentas entre dos fechas"""
+    
     Q_BETWEEN_DATES = 'FCADUCIDAD  BETWEEN to_date(\''+ fromDate +\
                        '\',\'yyyy-mm-dd\') AND to_date(\''+ toDate +\
                        '\',\'yyyy-mm-dd\')'
@@ -397,13 +432,14 @@ def getListByDate(toDate , fromDate='1900-01-01'):
     return userList
     
 def isArchived(user):
+    """Comprueba si un usuario esta archivado"""
+    
     try:
         cursor = oracleCon.cursor()
         #Llamo a la función uf_st_ultima
         ret = cursor.callfunc('UF_ST_ULTIMA',cx_Oracle.STRING,[user])
         cursor.close()    
         if ret == "0":
-            print "ARCHIVADO: ",user
             return True
         else:
             return False
@@ -412,6 +448,8 @@ def isArchived(user):
         return None
         
 def hasCuentaNT(cuenta):
+    """Comprueba si un usuario tiene cuenta NT"""
+    
     import ldap 
     statAD = False
     statSigu = False
@@ -442,9 +480,13 @@ def hasCuentaNT(cuenta):
     return True if statAD and statSigu else  False
     
 def comillas(cadena):
+    """ Nos devuelve una cadena entre comillas"""
+    
     return '\''+cadena+'\''
 
 def valueslist(*args,**kwargs):
+    """Devuelve una cadena con una serie de valores formateados para sentencia sql"""
+    
     cadena = '('
     size = len(args)
     argnumber = 1
@@ -470,20 +512,19 @@ def valueslist(*args,**kwargs):
 reason = Enum('NOTINLDAP','NOMANDATORY',"FAILARCHIVE","FAILDELETE","FAILARCHIVEDN","FAILDELETEDN",'UNKNOWN',"ISARCHIVED","UNKNOWNARCHIVED","NODNINAD")
 
 def formatReason(user,reason,attr,stats):
+    """Formatea la razon de fallo devolviendo una cadena"""
+    
     stats.reason[reason._index] +=1
     return user+"\t"+reason._key+"\t"+attr
 
 def filterArchived(userlist):
-    """Filtra de una lista de usuarios dejando solo los que no estan archivados
-    al ser las listas mutables, tenemos tenemos que borrar los elementos de la lista"""
-    for user in list(userlist):
-        print "USUARIO: ",user
-        if isArchived(user):
-            print "EXLUIDO"
-            userlist.remove(user)
-    print "USERLIST EN filter: ",userlist
+    """Filtra de una lista de usuarios dejando solo los que no estan archivados"""
+    
+    userlist[:] = [ x for x in userlist if not isArchived(x)]
 
 def fromFile(userlist):
+    """Lee la lista desde un fichero, teniendo en cuenta el filtro de exclusión"""
+    
     if os.path.exists(FROMFILE):
         try:
             f = open(FROMFILE,"r")
@@ -491,10 +532,9 @@ def fromFile(userlist):
             userlist.extend([line.strip() for line in f])
             f.close()
             #Si tenemos IGNOREARCHIVED filtramos la lista
-            print "USERLIST ANTES DE FILTRAR: ",userlist
             if IGNOREARCHIVED is True:
                 filterArchived(userlist)
-                print "USERLIST EN FROMFILE: ",userlist
+                if EXTRADEBUG: Debug("EXTRADEBUG-INFO: Lista filtrada: ",userlist)
             return True
         except BaseException,e:
             if DEBUG: Debug("Error leyendo FROMFILE: ",e)
@@ -630,23 +670,23 @@ class Session(object):
     def abort(self,severity):
         "Funcion que lleva el control sobre el proceso de abortar"
 
-        if EXTRADEBUG: Debug("ABORTALWAYS ES: ",ABORTALWAYS)
+        if EXTRADEBUG: Debug("EXTRADEBUG-INFO: ABORTALWAYS ES: ",ABORTALWAYS)
         if ABORTLIMIT == 0: 
             Print(0,'ABORT: No abortamos porque ABORTLIMIT es 0')
             return
                 
         if ABORTALWAYS is True:
             Print(0,'ABORT: Error y ABORTALWAYS es True')
-            exit(False)
+            os._exit(False)
 
         if ABORTINSEVERITY is True and severity is True:
             Print(0,'ABORT: Error con severidad y ABORTINSEVERITY es True')
-            exit(False)
+            os._exit(False)
             
         self.abortCount = self.abortCount + 1
         if self.abortCount > self.abortLimit:
             Print(0,'ABORT: Alcanzada la cuenta de errores para abort')
-            exit(False)
+            os._exit(False)
                     
         
     def die(self,user,rollback):
@@ -673,6 +713,7 @@ class Session(object):
         return False
             
     def __init__(self,sessionId,fromDate,toDate):
+        global MAXSIZE
         config.session = self        
         self.sessionId = sessionId
         self.fromDate = fromDate
@@ -686,8 +727,8 @@ class Session(object):
         self.abortDecrease = ABORTDECREASE
         self.abortAlways = ABORTALWAYS
         self.abortInSeverity = ABORTINSEVERITY
-        self.maxSize = MAXSIZE
         self.idsesion = 0
+
         #Comprobamos los parametros para poder ejecutar
         if not self.sessionId: raise ValueError
         if not self.fromDate: self.fromDate = '1900-01-01'
@@ -701,8 +742,34 @@ class Session(object):
         else:
             #Abortamos porque no existe el directorio padre de los tars
             Print(0,'ABORT: (session-start) No existe el directorio para tars: ',config.TARDIR)
+            os._exit(False)
         self.log = Log(self)
         self.stats = Stats(self)
+        #Tratamos MAXSIZE
+        #Intentamos convertir MAXSIZE a entero
+        try:
+            a = int(MAXSIZE)
+            MAXSIZE = a
+            if DEBUG is True: Debug("MAXSIZE era un entero y vale ",MAXSIZE)
+        except BaseException,e:
+            #Es una cadena vemos si es auto, convertible de humano o devolvemos error        
+            if MAXSIZE == "auto":
+                try:
+                    statfs = os.statvfs(config.TARDIR)
+                    MAXSIZE = statfs.f_bsize * statfs.f_bfree
+                    if DEBUG: Debug("MAXSIZE era auto y vale ",MAXSIZE)
+                except BaseException,e:
+                    Print(0,"ABORT: Calculando MAXSIZE para ",config.TARDIR)
+                    os._exit(False)
+            else:
+                a = humanToSize(MAXSIZE)
+                if a is not False:
+                    MAXSIZE = a
+                    if DEBUG: Debug("MAXSIZE era sizehuman y vale ",MAXSIZE)
+                else:
+                    Print(0,"ABORT: opción MAXSIZE invalida: ",MAXSIZE)
+                    os._exit(False)
+
         Print(0,'Procesando la sesion ',self.sessionId,' desde ',self.fromDate,' hasta ',self.toDate)
         
     def getaccountList(self):
@@ -749,8 +816,8 @@ class Session(object):
             ret = self.getaccountList()
         #Si ret es False ha fallado la recuperacion de la lista de cuentas
         if not ret:
-            Print(0,"ERROR: No he podido recuperar la lista de usuarios. Abortamos ...")
-            exit(False)
+            Print(0,"ABORT: No he podido recuperar la lista de usuarios. Abortamos ...")
+            os._exit(False)
         #Comenzamos el procesamiento
         self.log.writeIterable(self.log.fUsersList,self.accountList)
         self.stats.total = len(self.accountList)
@@ -1148,7 +1215,7 @@ class User(object):
     def getRootpath(self,tardir):
         if not os.path.isdir(tardir):
             Print(0,"ABORT: (user-archive) No existe el directorio para TARS",tardir)
-            exit(False)
+            os._exit(False)
 
         self.rootpath = tardir + '/' + self.cuenta
         if not os.path.isdir(self.rootpath):
@@ -1186,7 +1253,7 @@ class User(object):
                  os.rmdir(self.rootpath)
             except:
                 Print(0,'ABORT: No puedo borrar tar rootpath para ',self.cuenta,' ... abortando')
-                exit(False)
+                os._exit(False)
         else:            
             Print(2,'INFO: El tamaño de los tars para ',self.cuenta,' es: ',self.tarsizes)
         return True
@@ -1271,7 +1338,6 @@ class shell(cmd.Cmd):
         if FROMFILE is not None:
             userlist = []
             ret = fromFile(userlist)
-            print "USERLIST EN COUNT: ",userlist
             if not ret:
                 print "Error recuperando la cuenta de usuarios de ",FROMFILE
             else:
@@ -1331,7 +1397,7 @@ class shell(cmd.Cmd):
             
     def do_quit(self,line):
         print "Hasta luego Lucas ...."
-        exit(True)
+        os._exit(True)
         
     def __init__(self):
         cmd.Cmd.__init__(self)
@@ -1366,7 +1432,7 @@ parser.add_argument('--progress',help='Muestra indicacion del progreso',dest='PR
 parser.add_argument('-x','--mount-exlude',help='Excluye esta regex de los posibles montajes',dest='MOUNT_EXCLUDE',action='store',default="(?=a)b")
 parser.add_argument('--confirm',help='Pide confirmación antes de realizar determinadas acciones',dest='CONFIRM',action='store_true')
 parser.add_argument('--fromfile',help='Nombre de fichero de entrada con usuarios',dest='FROMFILE',action='store',default=None)
-parser.add_argument('--sessiondir',help='Carpeta para almacenar la sesion',dest='TARDIR',action='store',default='/tmp')
+parser.add_argument('--sessiondir',help='Carpeta para almacenar la sesion',dest='config.TARDIR',action='store',default='/tmp')
 
 args = parser.parse_args()
 
@@ -1380,20 +1446,19 @@ for var in args.__dict__:
         if vars(args)[var] is not None:
             if args.DEBUG: Debug('DEBUG-INFO: existe ',var,' y es ',vars(args)[var])
             globals()[var] = vars(args)[var]
-    
+
 if args.interactive:
     shell().cmdloop()
-    exit(0)
+    os._exit(True)
 
 if DEBUG: Debug('DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE)
-
-    
+  
 try:
     sesion = Session(sessionId,fromDate,toDate)
 except BaseException,e:
     Print(0,'ABORT: No se ha dado nombre a la sesion')
     print "ERROR: ",e
-    exit(False)
+    os._exit(False)
 CheckEnvironment()
 sesion.start()
 
