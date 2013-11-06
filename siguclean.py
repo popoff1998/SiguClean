@@ -542,7 +542,14 @@ def fromFile(userlist):
             return False   
     else:
         Print(0,"El fichero FROMFILE ",FROMFILE," no existe")
-        return False             
+        return False    
+
+def uniqueName(filename):
+    """Devuelve un nombre unico apra un fichero que se va a renombrar"""
+    contador = 0
+    while os.path.exists(filename+"."+str(contador)):
+        contador = contador + 1
+    return filename+"."+str(contador)
             
 #CLASES
   
@@ -594,9 +601,15 @@ class Log(object):
     "Clase que proporciona acceso a los logs"
     def __init__(self,session):
         self.session = session
-        #Creamos el directorio logs si no existe
+        #Creamos el directorio logs si no existe. Si existe renombramos el anterior
         if not os.path.isdir(session.tardir+"/logs"):
-            os.mkdir(session.tardir+"/logs",0777)
+            pass
+        else:
+            newname = uniqueName(session.tardir+"/logs")
+            os.rename(session.tardir+"/logs",newname)
+            print "NEWNAME es: ",newname
+        os.mkdir(session.tardir+"/logs",0777)
+
         #Abrimos todos los ficheros
         self.fUsersDone = open(session.tardir+'/logs/users.done','w')
         self.fUsersFailed = open(session.tardir+'/logs/users.failed','w')
