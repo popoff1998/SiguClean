@@ -857,6 +857,10 @@ class Session(object):
         if not ret:
             Print(0,"ABORT: No he podido recuperar la lista de usuarios. Abortamos ...")
             os._exit(False)
+        #Si la lista esta vacia no hay nada que procesar y salimos inmediatamente
+        if len(self.accountList) == 0:
+            Print(0,"EXIT: La lista de usuarios a procesar es vacia")
+            os._exit(True)
         #Comenzamos el procesamiento
         self.log.writeIterable(self.log.fUsersList,self.accountList)
         self.stats.total = len(self.accountList)
