@@ -22,7 +22,7 @@ Conceptos Clave
     Proceso que deshace los cambios realizados durante el archivado de un usuario. Su objetivo es dejar todo lo relativo a dicho usuario como si no hubiera sido procesado en dicha sesión.
 
 * **sesiondir:**
-    Directorio donde se almacenarán todos los usuarios archivados. La estructura será de una 
+    Directorio donde se almacenarán todos los usuarios archivados. La estructura contendrá una carpeta por cada usuario archivado y una carpeta logs con los ficheros de salida. La carpeta de usuario contendrá tantos tar.bz como storages se archiven aparte de un fichero con un volcado de la DN del usuario de active directory.
 
 Operativa
 ---------
@@ -49,7 +49,7 @@ La base de siguclean es que sea robusto. Para ello sigue varias máximas:
 
 **-s, --abortinseverity**: Abortar si se produce un error de tipo severo. El resto de errores se procesarán según los parámetros anteriores. La severidad o no de un error esta "hardcoded" en el código. (default: False)
 
-**-m, --maxsize** *tamaño máximo*: Límite de tamaño de archivados que una vez alcanzado ocasiona que el resto de usuario a procesar se salten (sean "skipped"). Su objetivo es no sobrepasar el espacio asignado para el directorio donde se archivarán los storages de los usuarios. Si vale 0 no se aplica límite ninguno. (Default: 0)
+**-m, --maxsize** *tamaño máximo*: Límite de tamaño de archivados que una vez alcanzado ocasiona que el resto de usuario a procesar se salten (sean "skipped"). Su objetivo es no sobrepasar el espacio asignado para el directorio donde se archivarán los storages de los usuarios. Si vale 0 no se aplica límite ninguno. Si vale àuto`se calcula el máximo en función del tamaño máximo del filesystem destino para los tars, con un margen de seguridad del 10% (Default: 0)
 
 **--debug**: Genera información de depuración, tanto por pantalla como en el fichero debug. (Default: False)
 
@@ -88,14 +88,16 @@ En siguclean podemos realizar varias selecciones que afectan al proceso del prog
 
 **--fromfile** < fichero >: En lugar de consultar los usuarios en sigu, se usan los del fichero especificado donde cada usuario va en una línea distinta. Es útil cuando se quiere volver a lanzar el procedimiento solo con los usuarios de cualquiera de los ficheros resultado que contenga usuarios que han fallado.
 
+**--ignore-archived**: Excluye directamente de la selección de sigu o del fichero de usuarios aquellos que ya están archivados para que no aparezcan como excluidos. Muy útil si se lanza un archivado para un rango de fechas que previamente fue procesado con el objeto de procesar solo los que tuvieron problemas y ya se han corregido.
+
 ### Selección de orígenes de storages ###
 
 Los orígenes de storages son los lugares del sistema de ficheros en los que esperamos encontrarnos los storages de los usuarios. En principio existe una lista de diccionarios hardcoded donde se especifican los diferentes filesystem que se usarán. Actualmente la tabla es esta:
 
-`    MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFS','mandatory':True,'val':''},
+**MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFS','mandatory':True,'val':''},
               {'account':'MAIL','fs':'homemail','label':'MAIL','mandatory':True,'val':''},  
               {'account':'WINDOWS','fs':'perfiles','label':'PERFILES','mandatory':False,'val':''},  
-              {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})`
+              {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})`**
               
 Los campos de la misma son:
 
