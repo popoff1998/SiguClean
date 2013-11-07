@@ -20,6 +20,8 @@ PROGRESS = False
 IGNOREARCHIVED = False
 FROMFILE = None
 MAXSIZE = 0
+RESTORE = False
+RESTORING = False
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
@@ -86,6 +88,7 @@ import dateutil.parser
 import re
 import collections
 from progressbar import *
+import subprocess
 
 state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR')
 
@@ -359,13 +362,13 @@ def Debug(*args,**kwargs):
     #Si tenemos verbose o no tenemos sesion sacamos la info por consola tambien
     if VERBOSE>0 or not config.session:
         print "".join(str(x) for x in args)
-    #Si tenemos definida la sesion lo grabamos en el fichero
-    if config.session:
+    #Si tenemos definido el log de la sesion lo grabamos en el fichero, en caso
+    #contrario solo salen por pantalla
+    #En sesiones restore no abrimos el fichero
+    if config.session and not RESTORE:
         if not fDebug:
-            #Creamos el directorio logs si no existe
-            if not os.path.isdir(config.session.tardir+"/logs"):
-                os.mkdir(config.session.tardir+"/logs",0777)            
-            fDebug = open(config.session.tardir+"/logs/debug","w")
+            fDebug = open(config.session.logsdir+"/debug","w")
+            
         if kwargs != {}:
             trail = kwargs['end']
         else:
@@ -602,25 +605,31 @@ class Log(object):
     def __init__(self,session):
         self.session = session
         #Creamos el directorio logs si no existe. Si existe renombramos el anterior
-        if not os.path.isdir(session.tardir+"/logs"):
-            pass
+        session.logsdir = session.tardir+"/logs"
+        if not os.path.exists(session.logsdir):
+            os.mkdir(session.logsdir,0777)
         else:
-            newname = uniqueName(session.tardir+"/logs")
-            os.rename(session.tardir+"/logs",newname)
-            print "NEWNAME es: ",newname
-        os.mkdir(session.tardir+"/logs",0777)
-
+            #Tenemos que tener en cuenta de si es una sesion restore
+            #caso de no serla rotamos el log. 
+            #si  lo es, usamos el mismo log solo para ller cmdline ya que el fork lo rotara
+            if not RESTORE:            
+                newname = uniqueName(session.logsdir)
+                os.rename(session.logsdir,newname)
+                os.mkdir(session.logsdir,0777)
+        #Si es restore salimos sin crear fichero ninguno
+        if RESTORE:
+            return
         #Abrimos todos los ficheros
-        self.fUsersDone = open(session.tardir+'/logs/users.done','w')
-        self.fUsersFailed = open(session.tardir+'/logs/users.failed','w')
-        self.fUsersRollback = open(session.tardir+'/logs/users.rollback','w')
-        self.fUsersNoRollback = open(session.tardir+'/logs/users.norollback','w')
-        self.fUsersSkipped = open(session.tardir+'/logs/users.skipped','w')
-        self.fUsersExcluded = open(session.tardir+'/logs/users.excluded','w')
-        self.fLogfile = open(session.tardir+'/logs/logfile','w')
-        self.fUsersList = open(session.tardir+'/logs/users.list','w')
-        self.fBbddLog = open(session.tardir+'/logs/bbddlog','w')
-        self.fFailReason = open(session.tardir+'/logs/failreason',"w")
+        self.fUsersDone = open(session.logsdir+'/users.done','w')
+        self.fUsersFailed = open(session.logsdir+'/users.failed','w')
+        self.fUsersRollback = open(session.logsdir+'/users.rollback','w')
+        self.fUsersNoRollback = open(session.logsdir+'/users.norollback','w')
+        self.fUsersSkipped = open(session.logsdir+'/users.skipped','w')
+        self.fUsersExcluded = open(session.logsdir+'/users.excluded','w')
+        self.fLogfile = open(session.logsdir+'/logfile','w')
+        self.fUsersList = open(session.logsdir+'/users.list','w')
+        self.fBbddLog = open(session.logsdir+'/bbddlog','w')
+        self.fFailReason = open(session.logsdir+'/failreason',"w")
         
     def writeDone(self,string):
         self.fUsersDone.writelines(string+"\n")
@@ -657,9 +666,11 @@ class Log(object):
         self.session.stats.skipped +=1
         
     def writeLog(self,string,newline):
-        trail = "\n" if newline else ""
-        self.fLogfile.write(string + trail)
-        self.fLogfile.flush()        
+        #En sesiones restore no escribimos el log
+        if not RESTORE:
+            trail = "\n" if newline else ""
+            self.fLogfile.write(string + trail)
+            self.fLogfile.flush()        
         
     def writeBbdd(self,string):
         try:
@@ -741,6 +752,7 @@ class Session(object):
         self.abortAlways = ABORTALWAYS
         self.abortInSeverity = ABORTINSEVERITY
         self.idsesion = 0
+        self.logsdir = ''
 
         #Comprobamos los parametros para poder ejecutar
         if not self.sessionId: raise ValueError
@@ -801,24 +813,38 @@ class Session(object):
     def bbddInsert(self):
         """ Inserta un registro de archivado en la BBDD """
         now = datetime.datetime.now()
-        try:
-            cursor = oracleCon.cursor()
-            #Consigo el idsesion
-            self.idsesion = int(cursor.callfunc('UF_ST_SESION',cx_Oracle.NUMBER))
-            values = valueslist(self.idsesion,now.strftime('%Y-%m-%d'),self.fromDate,self.toDate,self.sessionId)
-            query = Q_INSERT_SESION + values
-            self.log.writeBbdd(query)
-            if DRYRUN and not SOFTRUN:
-                return True
-            cursor.execute(query)
-            oracleCon.commit()
-            cursor.close()    
-            return True
-        except BaseException,e:
-            Print(0,"ERROR: Almacenando en la BBDD sesion ",self.sessionId)
-            if DEBUG: Debug("DEBUG-ERROR: (sesion.bbddInsert) Error: ",e)
-            return False
-    
+        #Distinguimos entre sesiones restoring y normales.
+        #Para las normales generamos un nuevo indice.
+        #Para las restoring usamos el previamente almacenado
+        if Debug: Debug("DEBUG-INFO: (session-bbddinsert) RESTORING es: ",RESTORING, " su tipo ",type(RESTORING))
+        if not RESTORING:        
+            try:
+                cursor = oracleCon.cursor()
+                #Consigo el idsesion
+                self.idsesion = int(cursor.callfunc('UF_ST_SESION',cx_Oracle.NUMBER))
+                values = valueslist(self.idsesion,now.strftime('%Y-%m-%d'),self.fromDate,self.toDate,self.sessionId)
+                query = Q_INSERT_SESION + values
+                self.log.writeBbdd(query)
+                if DRYRUN and not SOFTRUN:
+                    return True
+                cursor.execute(query)
+                oracleCon.commit()
+                cursor.close()    
+                #Salvamos en idsesion para restoring
+                if DEBUG: Debug("DEBUG-INFO: (session-bbddinsert) salvando idsesion: ",self.idsesion)
+            except BaseException,e:
+                Print(0,"ERROR: Almacenando en la BBDD sesion ",self.sessionId)
+                if DEBUG: Debug("DEBUG-ERROR: (sesion.bbddInsert) Error: ",e)
+                return False
+        else:
+            #Leemos el valor de RESTORING 
+            self.idsesion = int(RESTORING)
+
+        f = open(self.logsdir+"/idsesion","w")
+        f.write(str(self.idsesion)+"\n")
+        f.close()
+        return True
+
     def start(self):
         #Directorio para TARS
         if DEBUG: Debug('DEBUG-INFO: (session.start) config.TARDIR es: ',config.TARDIR)
@@ -1446,12 +1472,15 @@ parser.add_argument('-x','--mount-exlude',help='Excluye esta regex de los posibl
 parser.add_argument('--confirm',help='Pide confirmación antes de realizar determinadas acciones',dest='CONFIRM',action='store_true')
 parser.add_argument('--fromfile',help='Nombre de fichero de entrada con usuarios',dest='FROMFILE',action='store',default=None)
 parser.add_argument('--sessiondir',help='Carpeta para almacenar la sesion',dest='config.TARDIR',action='store',default='/tmp')
-
+parser.add_argument('--restore',help='Restaura la sesion especificada',dest='RESTORE',action='store_true')
+parser.add_argument('--restoring',help='Opcion interna para una sesion que esta restaurando una anterior. No usar.',dest='RESTORING',action='store',default=False)
 args = parser.parse_args()
 
 VERBOSE = args.verbosity
-if DEBUG: Debug('verbose es: ',VERBOSE)
+#NOTA: Los debugs previos a la creación de la sesión no se pueden almacenar en el fichero
+#debug pues aun no hemos establecido la rotación de logs
 
+if DEBUG and not RESTORE: Debug('verbose es: ',VERBOSE)
 
 #Si no es interactiva ponemos los valores a las globales
 for var in args.__dict__:
@@ -1464,16 +1493,49 @@ if args.interactive:
     shell().cmdloop()
     os._exit(True)
 
-if DEBUG: Debug('DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE)
+if DEBUG and not RESTORE: Debug('DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE)
+
+cmdline = sys.argv
+cmdlinestr = ' '.join(cmdline)
   
 try:
     sesion = Session(sessionId,fromDate,toDate)
 except BaseException,e:
-    Print(0,'ABORT: No se ha dado nombre a la sesion')
+    Print(0,'ABORT: Error en la creacion de la sesion')
     print "ERROR: ",e
     os._exit(False)
+
+#Guardamos los argumentos
+#Si no es una sesión restore salvamos el string
+if not RESTORE:
+    f = open(sesion.logsdir+"/cmdline","w")
+    f.write(cmdlinestr+"\n")
+    f.close()
+else:
+    #Leemos la linea de comando anterior y le añadimos --ignore-archived si no lo tenía
+    #Siempre trabajaremos sobre la linea de comando original del directorio logs
+    Print(0,"... Restaurando sesion anterior ...")
+    #Leemos la linea de comando
+    f = open(sesion.logsdir+"/cmdline","r")
+    cmdlinestr = f.readline().rstrip('\n') 
+    f.close()
+    #Leemos el idsesion anterior
+    f = open(sesion.logsdir+"/idsesion","r")
+    oldidsesion = f.readline().rstrip('\n') 
+    f.close()
+    
+    if not "--ignore-archived" in cmdlinestr:
+        cmdlinestr = cmdlinestr + " --ignore-archived"
+    if not " --restoring" in cmdlinestr:
+        cmdlinestr = cmdlinestr + " --restoring " + oldidsesion
+    #Lanzamos el subproceso
+    p = subprocess.Popen(cmdlinestr,shell=True) 
+    p.wait()
+    os._exit(True)
+
 CheckEnvironment()
 sesion.start()
+os._exit(True)
 
 
 
