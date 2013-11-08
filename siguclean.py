@@ -889,6 +889,12 @@ class Session(object):
         pp = 200000
         ip = 800000/len(self.userList)
         for user in self.userList:
+            #Escribimos en user.current el usuario actual por si el programa
+            #casca en medio del procesamiento y el usuario se queda a medio hacer
+            f = open(self.logsdir+"/users.current","w")
+            f.write(user.cuenta)
+            f.close()
+            
             if haveprogress(): 
                 pp = pp + ip                
                 pbar.update(pp)
@@ -919,9 +925,8 @@ class Session(object):
                         user.borraCuentaWindows()                        
                         continue
             #Escribimos el registro de usuario archivado
-            if not DRYRUN:
-                if not user.insertArchiveRecord():
-                    if not self.die(user,True): continue
+            if not user.bbddInsert():
+                if not self.die(user,True): continue
             #Si hemos llegado aquí todo esta OK
             if ABORTDECREASE: self.abortCount = self.abortCount -1
             if self.abortCount < 0: self.abortCount = 0
@@ -974,32 +979,38 @@ class Storage(object):
             tar.close()
             self.tarsize = os.path.getsize(self.tarpath)
             self.state = state.ARCHIVED
-            self.bbddInsert()
+            #Muevo el almacenamiento en la BBDD al finaldel proceso del usuario para que sea mas transaccional            
+            #self.bbddInsert()
             return True
         except:
             Print(0,"ERROR: Archivando",self.key)
             self.state = state.TARFAIL
             return False
             
-    def bbddInsert(self):
+    def bbddInsert(self,cursor):
         """ Inserta un registro de archivado en la BBDD """
-        try:
-            #Como en sigu 
-            values = valueslist(config.session.idsesion,self.parent.cuenta,self.tarpath,self.tarsize,self.state._index)
-            query = Q_INSERT_STORAGE + values        
-            config.session.log.writeBbdd(query)
-            if DRYRUN and not SOFTRUN:
+        #Solo procesamos si el storage se completo y por tanto esta en estado deleted
+        if EXTRADEBUG: Debug("EXTRADEBUG-INFO: (user-bbddInsert) self.state: ",self.state," key: ",self.key)
+        if self.state == state.DELETED:
+            try:
+                #Como en sigu 
+                values = valueslist(config.session.idsesion,self.parent.cuenta,self.tarpath,self.tarsize,self.state._index)
+                query = Q_INSERT_STORAGE + values        
+                config.session.log.writeBbdd(query)
+                if DRYRUN and not SOFTRUN:
+                    return True
+                cursor.execute(query)
+                #Hago el commit en el nivel superior            
+                #oracleCon.commit()
+                #cursor.close()                 
                 return True
-            cursor = oracleCon.cursor()
-            cursor.execute(query)
-            oracleCon.commit()
-            cursor.close()                 
+            except BaseException,e:
+                Print(0,"ERROR: Almacenando en la BBDD storage ",self.key)
+                if DEBUG: Debug("DEBUG-ERROR: (storage.bbddInsert) Error: ",e)
+                return False
+        else:
+            #Si no estaba archivado y no cascó lo consideramos correcto
             return True
-        except BaseException,e:
-            Print(0,"ERROR: Almacenando en la BBDD storage ",self.key)
-            if DEBUG: Debug("DEBUG-ERROR: (storage.bbddInsert) Error: ",e)
-            return False
-            
     def delete(self):
         "Borra un storage"
         #Primero tengo que controlar si no existe y no es mandatory
@@ -1143,9 +1154,20 @@ class User(object):
                 break
         return status
         
-    def insertArchiveRecord(self):
-        """Esta funcion es dummy pues con los datos de sigu se puede inferir si
-        un usuario esta archivado o no"""
+    def bbddInsert(self):
+        """Archiva en la BBDD todos los storages de usuario archivados"""
+        cursor = oracleCon.cursor()
+        for storage in self.storage:
+            ret = storage.bbddInsert(cursor)
+            if not ret:
+                #Debo hacer un rollback
+                if DEBUG: Debug("DEBUG-ERROR: (user-bbddInsert) Insertando: ",storage.key)                
+                oracleCon.rollback()
+                cursor.close()
+                return False
+        #Debo hacer un commit
+        oracleCon.commit()
+        cursor.close()
         return True
         
     def borraCuentaWindows(self):
