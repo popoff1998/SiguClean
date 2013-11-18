@@ -22,6 +22,7 @@ FROMFILE = None
 MAXSIZE = 0
 RESTORE = False
 RESTORING = False
+TARDIR = None
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
@@ -93,6 +94,17 @@ import subprocess
 state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR')
 
 #FUNCIONES
+import contextlib
+@contextlib.contextmanager
+def cd_change(tmp):
+    """Funcion para cambiar temporalmente a un directorio y volver al anterior despues"""
+    cd = os.getcwd()
+    os.chdir(tmp)
+    try:
+        yield
+    finally:
+        os.chdir(cd)
+        
 def haveprogress():
     """Comprueba si se dan las condiciones de mostrar la barra de progreso"""
     
@@ -435,7 +447,12 @@ def getListByDate(toDate , fromDate='1900-01-01'):
     return userList
     
 def isArchived(user):
-    """Comprueba si un usuario esta archivado"""
+    """Comprueba si un usuario esta archivado. De momento solo manejo el código de salida
+    de la función de sigu y no la información adicional. La casuistica es segun la salida
+    de UF_ST_ULTIMA
+    - 0 (ya archivado) o None: Devolvemos True (no procesar)
+    - 1 o 2 (hay que archivar): Devolvemos False
+    - 9 (el estado no es caducado o cancelado): Devolvemos la cadena de estado"""
     
     try:
         cursor = oracleCon.cursor()
@@ -445,6 +462,13 @@ def isArchived(user):
         if ret == "0":
             return True
         else:
+            if ret is None:
+                #Devolvemos como archivado si el usuario no existe (para fromfile)
+                return True
+            if ret[0] == "9":
+                #Si el estado es distinto de caducado o cancelado, devolvemos el propio estado
+                return ret[1]
+            #Si estamos aquí la salida es 1 o 2 y no esta archivado por tanto
             return False
     except BaseException,e:
         if DEBUG: Debug("DEBUG-ERROR: (isArchived) ",e)
@@ -521,9 +545,10 @@ def formatReason(user,reason,attr,stats):
     return user+"\t"+reason._key+"\t"+attr
 
 def filterArchived(userlist):
-    """Filtra de una lista de usuarios dejando solo los que no estan archivados"""
+    """Filtra de una lista de usuarios dejando solo los que no estan archivados
+    descontando los que dan otro tipo de salida que no sea False"""
     
-    userlist[:] = [ x for x in userlist if not isArchived(x)]
+    userlist[:] = [ x for x in userlist if isArchived(x) is False]
 
 def fromFile(userlist):
     """Lee la lista desde un fichero, teniendo en cuenta el filtro de exclusión"""
@@ -759,14 +784,14 @@ class Session(object):
         if not self.fromDate: self.fromDate = '1900-01-01'
         if not self.toDate: self.toDate = '2100-01-01'
         #Directorio para los tars
-        if os.path.exists(config.TARDIR):            
+        if os.path.exists(TARDIR):            
             if self.sessionId:            
-                self.tardir = config.TARDIR + '/' + self.sessionId
+                self.tardir = TARDIR + '/' + self.sessionId
             if not os.path.isdir(self.tardir):
                 os.mkdir(self.tardir,0777)
         else:
             #Abortamos porque no existe el directorio padre de los tars
-            Print(0,'ABORT: (session-start) No existe el directorio para tars: ',config.TARDIR)
+            Print(0,'ABORT: (session-start) No existe el directorio para tars: ',TARDIR)
             os._exit(False)
         self.log = Log(self)
         self.stats = Stats(self)
@@ -780,11 +805,11 @@ class Session(object):
             #Es una cadena vemos si es auto, convertible de humano o devolvemos error        
             if MAXSIZE == "auto":
                 try:
-                    statfs = os.statvfs(config.TARDIR)
+                    statfs = os.statvfs(TARDIR)
                     MAXSIZE = statfs.f_bsize * statfs.f_bfree
                     if DEBUG: Debug("MAXSIZE era auto y vale ",MAXSIZE)
                 except BaseException,e:
-                    Print(0,"ABORT: Calculando MAXSIZE para ",config.TARDIR)
+                    Print(0,"ABORT: Calculando MAXSIZE para ",TARDIR)
                     os._exit(False)
             else:
                 a = humanToSize(MAXSIZE)
@@ -847,7 +872,7 @@ class Session(object):
 
     def start(self):
         #Directorio para TARS
-        if DEBUG: Debug('DEBUG-INFO: (session.start) config.TARDIR es: ',config.TARDIR)
+        if DEBUG: Debug('DEBUG-INFO: (session.start) TARDIR es: ',TARDIR)
         print "VERBOSE: ",VERBOSE,"DEBUG: ",DEBUG,"PROGRESS: ",PROGRESS
         if haveprogress(): pbar=ProgressBar(widgets=[Percentage()," ",Bar(marker=RotatingMarker())," ",ETA()],maxval=1000000).start()
         #Creo la lista de cuentas
@@ -974,9 +999,11 @@ class Storage(object):
                 self.state = state.ARCHIVED                
                 self.bbddInsert()
                 return True
-            tar = tarfile.open(self.tarpath,"w:bz2")
-            tar.add(self.path)
-            tar.close()
+            #Cambiamos temporalmente al directorio origen para que el tar sea relativo
+            with cd_change(self.path):            
+                tar = tarfile.open(self.tarpath,"w:bz2")
+                tar.add(".")
+                tar.close()
             self.tarsize = os.path.getsize(self.tarpath)
             self.state = state.ARCHIVED
             #Muevo el almacenamiento en la BBDD al finaldel proceso del usuario para que sea mas transaccional            
@@ -1027,7 +1054,8 @@ class Storage(object):
                 os.remove(self.link)
             self.state = state.DELETED
             return True
-        except:
+        except BaseException,e:
+            if DEBUG: Debug("DEBUG_ERROR: Borrando ",self.path," : ",e)
             self.state = state.DELETEERROR
             return False
                 
@@ -1130,20 +1158,26 @@ class User(object):
         """Metodo que chequea los storages mandatory del usuario
         y si el usuario fue previamente archivado o no
         Asumo que la DN está bien porque acabo de buscarla."""
-        if isArchived(self.cuenta) is True:
+        archived = isArchived(self.cuenta)
+        if archived is True:
             status = False
             self.failreason = formatReason(self.cuenta,reason.ISARCHIVED,"---",self.parent.stats) 
             if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," ya estaba archivado")
             self.exclude = True            
             return status
-
-        if isArchived(self.cuenta) is None:
+        elif archived is None:
             status = False
             self.failreason = formatReason(self.cuenta,reason.UNKNOWNARCHIVED,"---",self.parent.stats) 
             if DEBUG: Debug("DEBUG-ERROR: (user.check) Error al comprobar estado de archivado de ",self.cuenta)
             self.exclude = True            
             return status
-
+        elif archived is not False:
+            status = False
+            self.failreason = formatReason(self.cuenta,reason.NOTARCHIVABLE,"---",archived) 
+            if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," no es archivable, estado de usuario: ",archived)
+            self.exclude = True            
+            return status
+            
         #El usuario no esta archivado, compruebo sus storages            
         status = True
         for storage in self.storage:
@@ -1164,6 +1198,7 @@ class User(object):
                 if DEBUG: Debug("DEBUG-ERROR: (user-bbddInsert) Insertando: ",storage.key)                
                 oracleCon.rollback()
                 cursor.close()
+                self.failreason = formatReason(self.cuenta,reason.INSERTBBDDSTORAGE,storage.key,"----")
                 return False
         #Debo hacer un commit
         oracleCon.commit()
@@ -1497,7 +1532,7 @@ parser.add_argument('--progress',help='Muestra indicacion del progreso',dest='PR
 parser.add_argument('-x','--mount-exlude',help='Excluye esta regex de los posibles montajes',dest='MOUNT_EXCLUDE',action='store',default="(?=a)b")
 parser.add_argument('--confirm',help='Pide confirmación antes de realizar determinadas acciones',dest='CONFIRM',action='store_true')
 parser.add_argument('--fromfile',help='Nombre de fichero de entrada con usuarios',dest='FROMFILE',action='store',default=None)
-parser.add_argument('--sessiondir',help='Carpeta para almacenar la sesion',dest='config.TARDIR',action='store',default='/tmp')
+parser.add_argument('--sessiondir',help='Carpeta para almacenar la sesion',dest='TARDIR',action='store',default=None)
 parser.add_argument('--restore',help='Restaura la sesion especificada',dest='RESTORE',action='store_true')
 parser.add_argument('--restoring',help='Opcion interna para una sesion que esta restaurando una anterior. No usar.',dest='RESTORING',action='store',default=False)
 args = parser.parse_args()
