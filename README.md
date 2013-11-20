@@ -66,6 +66,18 @@ Opciones de sesión
 
 **-n** *SESSIONID*: Nombre de la sesión de archivado. Todos los archivados se encontrarán en una carpeta con este nombre debajo de *sessiondir*. Se recomienda usar nombres descriptivos sobre el fin de la sesión, fecha o combinaciones de ella.
 
+**--restore**: Esta opción se debe usar solo con las dos opciones anteriores (o solo con *-n* si usamos el directorio por defecto). Restaura una sesión anterior previamente interrumpida, ya sea porque el programa abortó, porque nosotros lo matamos o porque el servidor se rebotó.
+
+Su cometido es restaurar una sesión previamente ejecutada. Usará el mismo directorio de sesión y en la BBDD los registros se añadirán usando la misma clave de sesión restaurada. Las opciones de ejecución serán las mismas con las que se lanzó la sesión original.
+
+Para ello en cada ejecución de una sesión se salva la línea de comandos en el fichero cmdline en el directorio de logs correspondiente *(ver la sección ficheros de log)*
+
+Si miramos con `ps` los procesos siguclean en ejecución, veremos que tras un restore aparte del proceso con dicha opción, aparece otro hijo de él con la opción *--ignore-archived* activada (aunque no la hubiéramos seleccionado antes), y con otra opción *--restoring < n >* donde *n* es el id de la sesión en la BBDD. La opción *--restoring* es de uso interno y no debe ser invocada directamente por el usuario.
+
+Al final del proceso, el global de usuarios procesados en la sesión para cada categoría de éxito, fallo, exclusión, etc. será la unión de los que aparezcan en los diferentes directorios de logs que se hayan ido creando para la sesión.
+
+Se puede lanzar un restore de una sesión tantas veces como se quiera, incluso aunque la sesión hubiera finalizado correctamente. En este último caso, si todos los usuarios han sido procesados el programa saldrá inmediatamente. Si hubiera terminado pero con fallo en algunos, se volverán a procesar dichos fallos, muy útil si se ha corregido algo que pueda ampliar la posibilidad de éxito de la sesión.
+
 Opciones de control de cambios
 ------------------
 
@@ -94,10 +106,10 @@ En siguclean podemos realizar varias selecciones que afectan al proceso del prog
 
 Los orígenes de storages son los lugares del sistema de ficheros en los que esperamos encontrarnos los storages de los usuarios. En principio existe una lista de diccionarios hardcoded donde se especifican los diferentes filesystem que se usarán. Actualmente la tabla es esta:
 
-**MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFS','mandatory':True,'val':''},
+`    MOUNTS = ({'account':'LINUX','fs':'homenfs','label':'HOMESNFS','mandatory':True,'val':''},
               {'account':'MAIL','fs':'homemail','label':'MAIL','mandatory':True,'val':''},  
               {'account':'WINDOWS','fs':'perfiles','label':'PERFILES','mandatory':False,'val':''},  
-              {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})`**
+              {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})`
               
 Los campos de la misma son:
 
@@ -134,8 +146,16 @@ Siguclean genera una carpeta por cada usuario con su nombre con los archivados d
 
 *usuario_filesystemkey_sessiondir*.tar.bz2
 
-Los ficheros de log se encuentran en la carpeta logs en al raiz de *sessionid* y son:
+Los ficheros de log se encuentran en principio en la carpeta logs en al raiz de *sessionid*. Existe un mecanismo de rotación de logs por si se lanzan ejecuciones sucesivas con el mismo identificador de sesión. El sistema de rotación ocasiona que:
 
+* La última ejecución lanzada esté en la carpeta logs.
+* Caso de haber más de una, la primera lanzada esté en logs.0. La segunda en logs.1 y así sucesivamente.
+
+Los  ficheros presentes en la carpeta de logs son:
+
+* **cmdline**: La línea de comando que se usó para lanzar el proceso. Las sesiones de restore no generan una carpeta de log como tal, la genera la sesión hija que lanza. Por tanto no debemos esperar encontar ningún `cmdline` con la opción *--restore*
+* **idsesion**: Almacena el identificador de sesión usado en la BBDD, por tanto el valor numérico generado secuencialmente en ella.
+* **users.current**: Almacena el usuario que se está procesando en un momento dado. Si el proceso termina correctamente, tendrá el último usuario que se procesó. Si el proceso falla o se corta inesperadamente, tendrá el usuario que comenzó a procesar y no se completó. Nos puede servir para analizar manualmente que pasa con los usuarios que se quedan a medio procesar y que lógicamente quedan fuera de la lógica del programa.
 * **logfile**: Contiene toda la salida por pantalla para todos los niveles de verbose independientemente del nivel de verbose seleccionado. Es el equivalente a haber seleccionado un verbose muy alto y redirigir la salida a un fichero.
 * **debug**: Contiene toda la salida de la información de depuración.
 * **bbddlog**: Contiene todas las secuencias insert de sql que se han generado para sigu. Nos permite en caso de que haya fallado la inserción poder reproducirla posteriormente.
