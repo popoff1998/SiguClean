@@ -30,6 +30,7 @@ Q_GET_CUENTA_NT = 'SELECT CCUENTA FROM UT_CUENTAS_NT WHERE CCUENTA ='
 Q_INSERT_STORAGE = 'INSERT INTO UT_ST_STORAGE (IDSESION,CCUENTA,TTAR,NSIZE,CESTADO) VALUES '
 Q_INSERT_SESION = 'INSERT INTO UT_ST_SESION (IDSESION,FSESION,FINICIAL,FFINAL,DSESION) VALUES '
 Q_IGNORE_ARCHIVED ='UF_ST_ULTIMA(CCUENTA) !=\'0\''
+Q_ONLY_ARCHIVED = 'UF_ST_ULTIMA(CCUENTA) =\'0\''
 
 #LDAP_SERVER = "ldap://ldap1.priv.uco.es"
 LDAP_SERVER = "ldaps://ucoapp08.uco.es"
@@ -91,7 +92,7 @@ import collections
 from progressbar import *
 import subprocess
 
-state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR')
+state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR','UNARCHIVED')
 
 #FUNCIONES
 import contextlib
@@ -446,6 +447,28 @@ def getListByDate(toDate , fromDate='1900-01-01'):
     config.status.userList = True
     return userList
     
+def getArchivedByDate(toDate , fromDate='1900-01-01'):
+    """Devuelve una lista de cuentas entre dos fechas"""
+    
+    Q_BETWEEN_DATES = 'FCADUCIDAD  BETWEEN to_date(\''+ fromDate +\
+                       '\',\'yyyy-mm-dd\') AND to_date(\''+ toDate +\
+                       '\',\'yyyy-mm-dd\')'
+    query = Q_GET_BORRABLES + ' AND ' + Q_BETWEEN_DATES + ' AND ' + Q_ONLY_ARCHIVED
+    if DEBUG: Debug("DEBUG-INFO: (getListByDate) Query:",query)
+    try:
+        cursor = oracleCon.cursor()
+        cursor.execute(query)     
+        tmpList = cursor.fetchall()
+        cursor.close()
+    except BaseException,e:
+        Print(0,"ERROR: Error recuperando la lista de usuarios archivados")
+        if DEBUG: Debug("DEBUG-ERROR: (getListByDate): ",e)
+        return None
+    #Convertimos para quitar tuplas
+    userList = [x[0] for x in tmpList]        
+    config.status.userList = True
+    return userList
+    
 def isArchived(user):
     """Comprueba si un usuario esta archivado. De momento solo manejo el código de salida
     de la función de sigu y no la información adicional. La casuistica es segun la salida
@@ -623,7 +646,18 @@ class Stats(object):
         Print(0,"Fin\t\t",self.fin.strftime('%d-%m-%y %H:%M:%S'))
         elapsed = self.fin - self.inicio
         Print(0,"Elapsed:\t",elapsed)
-        Print(0,"Rendimiento:\t",(self.total - self.skipped)/elapsed.seconds," users/sec")        
+        #El cálculo del rendimiento lo escalamos
+        _users = self.total - self.skipped
+        if _users > elapsed.seconds:
+            _rendimiento = _users/elapsed.seconds
+            Print(0,"Rendimiento:\t",_rendimiento," users/sec")        
+        else:
+            _rendimiento = (_users * 60)/elapsed.seconds
+            if _rendimiento >=1:
+                Print(0,"Rendimiento:\t",_rendimiento," users/min")    
+            else:
+                _rendimiento = elapsed.seconds/_users
+                Print(0,"Rendimiento:\t",_rendimiento," sec/user") 
 
 class Log(object):
     "Clase que proporciona acceso a los logs"
@@ -783,8 +817,11 @@ class Session(object):
         if not self.sessionId: raise ValueError
         if not self.fromDate: self.fromDate = '1900-01-01'
         if not self.toDate: self.toDate = '2100-01-01'
+        #Comprobamos que existe TARDIR
+        if TARDIR is None:
+            raise Exception("No ha dado valor a sessiondir")
         #Directorio para los tars
-        if os.path.exists(TARDIR):            
+        if os.path.exists(TARDIR):
             if self.sessionId:            
                 self.tardir = TARDIR + '/' + self.sessionId
             if not os.path.isdir(self.tardir):
@@ -939,16 +976,20 @@ class Session(object):
                 if not self.die(user,True): continue
             #Lo siguiente solo lo hacemos si tiene cuenta windows
             if 'WINDOWS' in user.cuentas:
-                #... Almacenamos el DN ...
+                #Si falla el archivado de DN continuamos pues quiere decir que no está en AD
+                #Si ha hecho el archivado y falla el borrado, hacemos rollback
                 if not user.archiveDN(self.tardir):
                     if DEBUG: Debug("DEBUG-WARNING: Error archivando DN de ",user.cuenta)
-                    if not self.die(user,False): continue
-                #... y borramos el DN            
-                if not user.deleteDN():
-                    if DEBUG: Debug("DEBUG-WARNING: Error archivando DN de ",user.cuenta)
-                    if not self.die(user,False):
-                        user.borraCuentaWindows()                        
-                        continue
+                    if not self.die(user,False): 
+                        pass                        
+                        #continue
+                else: 
+                    if not user.deleteDN():
+                        if DEBUG: Debug("DEBUG-WARNING: Error borrando DN de ",user.cuenta)
+                        if not self.die(user,True):
+                            user.borraCuentaWindows()                        
+                            continue
+                            #continue
             #Escribimos el registro de usuario archivado
             if not user.bbddInsert():
                 if not self.die(user,True): continue
@@ -1064,8 +1105,8 @@ class Storage(object):
         - Si se ha borrado hacemos un untar
         - Borramos el tar
         - Ponemos el state como rollback"""
-        if DEBUG: Debug('DEBUG-INFO: (storage.rollback)',self.__dict__)
-        if self.state == state.DELETED or self.state == state.DELETEERROR:
+        if EXTRADEBUG: Debug('EXTRADEBUG-INFO: (storage.rollback)',self.__dict__)
+        if self.state in(state.DELETED,state.DELETEERROR):
             if not self.unarchive():
                 self.state = state.ERROR
                 return False
@@ -1075,8 +1116,8 @@ class Storage(object):
                     os.link(self.link,self.path)
         try:
             #Si no está archivado no hay que borrar el tar
-            if self.state not in (state.ARCHIVED,state.TARFAIL): 
-                if DEBUG: Debug("DEBUG-INFO: (storage.rollback) No hago rollback de ",self.key," no estaba archivado")
+            if self.state not in (state.ARCHIVED,state.TARFAIL,state.UNARCHIVED): 
+                if DEBUG: Debug("DEBUG-INFO: (storage.rollback) No borro ",self.key," no estaba archivado, state = ",self.state)
                 return True
             #Borramos el tar
             os.remove(self.tarpath)
@@ -1090,13 +1131,14 @@ class Storage(object):
             
     def unarchive(self):
         """Des-archiva un storage"""
-        if self.state == state.DELETED or self.state == state.ARCHIVED:
+        if self.state in (state.DELETED,state.ARCHIVED,state.DELETEERROR):
             try:
                 Print(1,"Unarchiving ",self.key," to ",self.path," from ",self.tarpath," ... ")                
                 if DRYRUN: return True                
                 tar = tarfile.open(self.tarpath,"r:*")
                 tar.extractall(self.path)
                 tar.close()
+                self.state = state.UNARCHIVED
                 return True
             except:
                 Print(0,"Error unarchiving ",self.key," to ",self.path," from ",self.tarpath," ... ")
@@ -1307,9 +1349,11 @@ class User(object):
             - Recuperar de los tars los storages borrados            
             - Borrar los tars
         """
+        Print(2,"*** ROLLBACK INIT *** ",self.cuenta)
         for storage in self.storage:
             if not storage.rollback():
                 return False
+        Print(2,"*** ROLLBACK OK *** ",self.cuenta)
         return True
         
     def getRootpath(self,tardir):
@@ -1493,7 +1537,37 @@ class shell(cmd.Cmd):
             ret = ldapFromSigu(user,attr)
             print ret
         except BaseException,e:
-            print "Error consultando atributo ldap",e  
+            print "Error consultando atributo ldap",e 
+
+    def do_advsarchived(self,line):
+        """
+        Lista aquellos archivados que aun estan en AD
+        <advsarchived fromdate todate>
+        En caso de no especificar las fechas, se tomam todo el rango temporal
+        """
+        CheckEnvironment()
+
+        try:
+            if line == '':
+                fromDate = '1900-01-01'
+                toDate = '2099-01-01'
+            else:
+                fromDate,toDate = self.parse(line)
+            #userlist = getArchivedByDate(toDate,fromDate)
+            userlist = getArchivedByDate(toDate,fromDate)
+        except BaseException,e:
+            print "Error recuperando lista de usuarios archivados de SIGU: ",e
+            return
+
+        global NTCHECK
+        NTCHECK = 'ad'
+        contador = 0
+        for user in userlist:
+            if hasCuentaNT(user):
+                print user
+                contador = contador + 1
+        print "Usuarios archivados entre ",fromDate," y ",toDate," = ",len(userlist)
+        print "Usuarios archivados que aun tienen cuenta AD: ",contador
             
     def do_quit(self,line):
         print "Hasta luego Lucas ...."
