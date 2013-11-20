@@ -1353,6 +1353,12 @@ class User(object):
         for storage in self.storage:
             if not storage.rollback():
                 return False
+        #Si llegamos aquí, borramos el directorio padre
+        try:
+            rmtree(self.rootpath)
+        except BaseException,e:
+            Print(0,"ABORT: Error borrando rootpath: ",self.rootpath," error: ",e)
+            os._exit(False)
         Print(2,"*** ROLLBACK OK *** ",self.cuenta)
         return True
         
@@ -1392,12 +1398,6 @@ class User(object):
         if not ret:
             Print(0,'WARNING: Error archivando usuario ',self.cuenta,' fs ',storage.key,' haciendo rollback')
             self.rollback()
-            try:
-                 #Borramos el directorio padre
-                 os.rmdir(self.rootpath)
-            except:
-                Print(0,'ABORT: No puedo borrar tar rootpath para ',self.cuenta,' ... abortando')
-                os._exit(False)
         else:            
             Print(2,'INFO: El tamaño de los tars para ',self.cuenta,' es: ',self.tarsizes)
         return True
