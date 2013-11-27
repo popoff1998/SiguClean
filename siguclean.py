@@ -109,7 +109,7 @@ def cd_change(tmp):
 def haveprogress():
     """Comprueba si se dan las condiciones de mostrar la barra de progreso"""
     
-    if PROGRESS and not DEBUG and VERBOSE == 0: 
+    if PROGRESS and VERBOSE == 0: 
         return True
     else:
         return False
@@ -248,18 +248,30 @@ def CheckMounts():
         os._exit(False)
     salgo = False
     for var in MOUNTS:
-        Print(1,'     comprobando '+var['fs']+' ...',end='')
+        Print(2,'     comprobando '+var['fs']+' ...',end='')
         var['val'] = get_mount_point(var['label'],regex)
         if var['val'] != None:
-            Print(1,"Usando montaje ",var['val'])
+            Print(2,"Usando montaje ",var['val'])
             exec("config.status.%s = True" % (var['fs']))
         else:
             exec("config.status.%s = False" % (var['fs']))
-            Print(1,"NO ACCESIBLE")
+            Print(2,"NO ACCESIBLE")
             salgo = True
     if salgo:
         Print(0,'ABORT: Algunos puntos de montaje no estan accesibles')
         os._exit(False)
+    #Resumen de montajes
+    if CONFIRM: 
+        VERBLEVEL=0
+    else:
+        VERBLEVEL=1
+    Print(VERBLEVEL,"*** RESUMEN DE MONTAJES ***")
+    for var in MOUNTS:
+        if len(var['label']) < 8:
+            tabs = "\t\t\t"
+        else:
+            tabs = "\t\t"
+        Print(VERBLEVEL,var['label'],tabs,var['val'])
     if CONFIRM: confirm()
 
 def inputParameter(param,text,mandatory):
@@ -1569,6 +1581,30 @@ class shell(cmd.Cmd):
         print "Usuarios archivados entre ",fromDate," y ",toDate," = ",len(userlist)
         print "Usuarios archivados que aun tienen cuenta AD: ",contador
             
+    def do_archived(self,line):
+        """
+        Lista aquellos archivados entre dos fechas (basada en su caducidad en ut_cuentas)
+        <archived fromdate todate>
+        En caso de no especificar las fechas, se tomam todo el rango temporal
+        """
+        CheckEnvironment()
+
+        try:
+            if line == '':
+                fromDate = '1900-01-01'
+                toDate = '2099-01-01'
+            else:
+                fromDate,toDate = self.parse(line)
+            #userlist = getArchivedByDate(toDate,fromDate)
+            userlist = getArchivedByDate(toDate,fromDate)
+        except BaseException,e:
+            print "Error recuperando lista de usuarios archivados de SIGU: ",e
+            return
+
+        print "Usuarios archivados entre ",fromDate," y ",toDate," = ",len(userlist)
+        for user in userlist:
+            print user
+        
     def do_quit(self,line):
         print "Hasta luego Lucas ...."
         os._exit(True)
