@@ -27,7 +27,7 @@ TARDIR = None
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
 Q_GET_CUENTA_NT = 'SELECT CCUENTA FROM UT_CUENTAS_NT WHERE CCUENTA ='
-Q_INSERT_STORAGE = 'INSERT INTO UT_ST_STORAGE (IDSESION,CCUENTA,TTAR,NSIZE,CESTADO) VALUES '
+Q_INSERT_STORAGE = 'INSERT INTO UT_ST_STORAGE (IDSESION,CCUENTA,TTAR,NSIZE,CESTADO,NSIZE_ORIGINAL,NFICHEROS) VALUES '
 Q_INSERT_SESION = 'INSERT INTO UT_ST_SESION (IDSESION,FSESION,FINICIAL,FFINAL,DSESION) VALUES '
 Q_IGNORE_ARCHIVED ='UF_ST_ULTIMA(CCUENTA) !=\'0\''
 Q_ONLY_ARCHIVED = 'UF_ST_ULTIMA(CCUENTA) =\'0\''
@@ -855,7 +855,7 @@ class Session(object):
             if MAXSIZE == "auto":
                 try:
                     statfs = os.statvfs(TARDIR)
-                    MAXSIZE = statfs.f_bsize * statfs.f_bfree
+                    MAXSIZE = int(statfs.f_bsize * statfs.f_bfree * 0.9)
                     if DEBUG: Debug("MAXSIZE era auto y vale ",MAXSIZE)
                 except BaseException,e:
                     Print(0,"ABORT: Calculando MAXSIZE para ",TARDIR)
@@ -1031,6 +1031,8 @@ class Storage(object):
         self.tarsize = 0
         self.state = state.NA
         self.accesible = None
+        self.size_orig = 0
+        self.files = 0
         
     def display(self):
         Print(1,self.key,"\t = ",self.path,"\t Accesible: ",self.accesible,"\t Estado: ",self.state)
@@ -1056,6 +1058,12 @@ class Storage(object):
             with cd_change(self.path):            
                 tar = tarfile.open(self.tarpath,"w:bz2")
                 tar.add(".")
+                #Calculamos el tamaño original y el numero de ficheros
+                members = tar.getmembers()
+                for member in members:
+                    self.size_orig = self.size_orig + member.size
+                self.files = len(members)
+                #Fin del calculo
                 tar.close()
             self.tarsize = os.path.getsize(self.tarpath)
             self.state = state.ARCHIVED
@@ -1074,7 +1082,7 @@ class Storage(object):
         if self.state == state.DELETED:
             try:
                 #Como en sigu 
-                values = valueslist(config.session.idsesion,self.parent.cuenta,self.tarpath,self.tarsize,self.state._index)
+                values = valueslist(config.session.idsesion,self.parent.cuenta,self.tarpath,self.tarsize,self.state._index,self.size_orig,self.files)
                 query = Q_INSERT_STORAGE + values        
                 config.session.log.writeBbdd(query)
                 if DRYRUN and not SOFTRUN:
