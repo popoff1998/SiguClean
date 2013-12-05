@@ -95,6 +95,10 @@ import subprocess
 state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR','UNARCHIVED')
 
 #FUNCIONES
+def fetchsingle(cursor):
+    ret = cursor.fetchall()
+    return ret[0][0]
+
 import contextlib
 @contextlib.contextmanager
 def cd_change(tmp):
@@ -334,14 +338,14 @@ def sizeToHuman(size):
     
     symbols = ('B','K','M','G','T')
     indice = 0
-    if EXTRADEBUG: Debug("EXTRADEBUG-INFO: (sizeToHuman) Size antes de redondear es: ",size )
+    #if EXTRADEBUG: Debug("EXTRADEBUG-INFO: (sizeToHuman) Size antes de redondear es: ",size )
     while(True):
         if size < 1024:
-            string = str(size)+symbols[indice]
+            string = str(round(size,1))+" "+symbols[indice]
             return string
-        size = size / 1024
+        size = size / 1024.0
         indice = indice + 1
-        
+    
 def humanToSize(size):
     """Convierte un tamaño en formato humano a bytes"""
     
@@ -1612,6 +1616,45 @@ class shell(cmd.Cmd):
         print "Usuarios archivados entre ",fromDate," y ",toDate," = ",len(userlist)
         for user in userlist:
             print user
+            
+    def do_stats(self,line):
+        """Devuelve estadisticas sobre el proceso de archivado"""
+        CheckEnvironment()
+        
+        cursor = oracleCon.cursor()
+        cursor.execute("select sum(nficheros) from ut_st_storage")
+        nficheros = fetchsingle(cursor)
+        cursor.execute("select sum(nsize_original) from ut_st_storage")
+        nsize_original = fetchsingle(cursor)
+        cursor.execute("select sum(nsize) from ut_st_storage")
+        nsize = fetchsingle(cursor)
+        cursor.execute("select count(*) from ut_st_storage")
+        ntars = fetchsingle(cursor)
+        cursor.execute("select count(*) from ut_st_sesion")
+        nsesiones =fetchsingle(cursor)
+        cursor.execute("select count(distinct(ccuenta)) from ut_st_storage")
+        narchivados = fetchsingle(cursor)
+        cursor.execute("select max(nficheros) from ut_st_storage")
+        maxficheros = fetchsingle(cursor)
+        cursor.execute("select max(nsize_original) from ut_st_storage")
+        maxsize_orig = fetchsingle(cursor)
+        
+        print "*********************************"
+        print "*** ESTADISTICAS DE SIGUCLEAN ***"
+        print "*********************************"
+        print "\n"
+        print "Sesiones:\t",nsesiones
+        print "Archivados:\t",narchivados
+        print "Numero tars:\t",ntars
+        print "Ficheros:\t",nficheros
+        print "Tamaño Orig:\t",sizeToHuman(nsize_original)
+        print "Tamaño Arch:\t",sizeToHuman(nsize)
+        print "Max ficheros:\t",maxficheros
+        print "Max tamaño:\t",sizeToHuman(maxsize_orig)
+        
+        
+
+        
         
     def do_quit(self,line):
         print "Hasta luego Lucas ...."
