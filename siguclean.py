@@ -966,7 +966,13 @@ class Session(object):
         skip = False
         pp = 200000
         ip = 800000/len(self.userList)
+        #Bucle principal de procesamiento de usuarios        
         for user in self.userList:
+            #Salimos si hemos creado el fichero indicador de parada
+            if os.path.exists(self.tardir+"/STOP"):
+                os.remove(self.tardir+"/STOP")
+                Print(0,"Abortado por el usuario con fichero STOP")
+                os._exit(True)
             #Escribimos en user.current el usuario actual por si el programa
             #casca en medio del procesamiento y el usuario se queda a medio hacer
             f = open(self.logsdir+"/users.current","w")
