@@ -23,6 +23,7 @@ MAXSIZE = 0
 RESTORE = False
 RESTORING = False
 TARDIR = None
+EXCLUDEUSERSFILE = None
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
@@ -33,7 +34,7 @@ Q_IGNORE_ARCHIVED ='UF_ST_ULTIMA(CCUENTA) !=\'0\''
 Q_ONLY_ARCHIVED = 'UF_ST_ULTIMA(CCUENTA) =\'0\''
 
 #LDAP_SERVER = "ldap://ldap1.priv.uco.es"
-LDAP_SERVER = "ldaps://ucoapp08.uco.es"
+LDAP_SERVER = "ldaps://ucoapp09.uco.es"
 BIND_DN = "Administrador@uco.es"
 USER_BASE = "dc=uco,dc=es"
 ORACLE_SERVER='ibmblade47/av10g'
@@ -575,7 +576,7 @@ def valueslist(*args,**kwargs):
     return cadena
 
 
-reason = Enum('NOTINLDAP','NOMANDATORY',"FAILARCHIVE","FAILDELETE","FAILARCHIVEDN","FAILDELETEDN",'UNKNOWN',"ISARCHIVED","UNKNOWNARCHIVED","NODNINAD")
+reason = Enum('NOTINLDAP','NOMANDATORY',"FAILARCHIVE","FAILDELETE","FAILARCHIVEDN","FAILDELETEDN",'UNKNOWN',"ISARCHIVED","UNKNOWNARCHIVED","NODNINAD","EXPLICITEXCLUDED")
 
 def formatReason(user,reason,attr,stats):
     """Formatea la razon de fallo devolviendo una cadena"""
@@ -819,6 +820,7 @@ class Session(object):
         self.toDate = toDate
         self.accountList = []
         self.userList = []
+        self.excludeuserslist = []
         self.tarsizes = 0
         self.tardir = ''
         self.abortCount = 0
@@ -872,6 +874,22 @@ class Session(object):
                 else:
                     Print(0,"ABORT: opción MAXSIZE invalida: ",MAXSIZE)
                     os._exit(False)
+        #Tratamos el fichero EXCLUDEUSERSFILE
+        if EXCLUDEUSERSFILE is not None:
+            Print(0,"Excluyendo usuarios de ",EXCLUDEUSERSFILE)
+            if os.path.exists(EXCLUDEUSERSFILE):
+                try:
+                    f = open(EXCLUDEUSERSFILE,"r")
+                    #Leemos los usuarios quitando el \n final
+                    self.excludeuserslist.extend([line.strip() for line in f])
+                    f.close()
+                except BaseException,e:
+                    if DEBUG: Debug("Error leyendo EXCLUDEUSERSFILE: ",e)
+                    Print(0,"Error leyendo EXCLUDEUSERSFILE: ",FROMFILE)
+                    return False                  
+            else:
+                Print(0,"ABORT: No exite el fichero de exclusion de usuarios")
+                os._exit(False)
 
         Print(0,'Procesando la sesion ',self.sessionId,' desde ',self.fromDate,' hasta ',self.toDate)
         
@@ -952,11 +970,11 @@ class Session(object):
                     pp = pp + ip                
                     pbar.update(pp)
                 user = User(account,self)
-                #Manejamos la exclusion por no estar en ldap
+                #Manejamos la exclusion del usuario
                 if user.exclude:
                     self.log.writeExcluded(user.cuenta)
                     #Generamos y grabamos la razon del fallo
-                    self.log.writeFailReason(formatReason(user.cuenta,reason.NOTINLDAP,"----",self.stats))
+                    self.log.writeFailReason(formatReason(user.cuenta,user.failreason,"----",self.stats))
                 else:
                     self.userList.append(user) 
         if haveprogress(): pbar.update(200000)
@@ -1307,6 +1325,12 @@ class User(object):
         self.adObject = None
         self.failreason = None
         self.cuenta = cuenta
+        #Compruebo si esta explicitamente excluido
+        if self.cuenta in self.parent.excludeuserslist:
+            self.failreason = reason.EXPLICITEXCLUDED
+            self.exclude = True
+            return
+            
         if TEST:
             self.homedir = cuenta
         else:
@@ -1702,6 +1726,7 @@ parser.add_argument('--fromfile',help='Nombre de fichero de entrada con usuarios
 parser.add_argument('--sessiondir',help='Carpeta para almacenar la sesion',dest='TARDIR',action='store',default=None)
 parser.add_argument('--restore',help='Restaura la sesion especificada',dest='RESTORE',action='store_true')
 parser.add_argument('--restoring',help='Opcion interna para una sesion que esta restaurando una anterior. No usar.',dest='RESTORING',action='store',default=False)
+parser.add_argument('--exclude-userfile',help='Excluir los usuarios del fichero parámetro',dest='EXCLUDEUSERSFILE',action='store',default=None)
 args = parser.parse_args()
 
 VERBOSE = args.verbosity
