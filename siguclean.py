@@ -97,8 +97,10 @@ state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR
 
 #FUNCIONES
 def fetchsingle(cursor):
-    ret = cursor.fetchall()
-    return ret[0][0]
+    ret = cursor.fetchone()
+    if len(ret) == 1:
+        ret = ret[0]
+    return ret
 
 import contextlib
 @contextlib.contextmanager
@@ -1690,10 +1692,10 @@ class shell(cmd.Cmd):
         nsesiones =fetchsingle(cursor)
         cursor.execute("select count(distinct(ccuenta)) from ut_st_storage")
         narchivados = fetchsingle(cursor)
-        cursor.execute("select max(nficheros) from ut_st_storage")
-        maxficheros = fetchsingle(cursor)
-        cursor.execute("select max(nsize_original) from ut_st_storage")
-        maxsize_orig = fetchsingle(cursor)
+        cursor.execute("select nficheros,ccuenta from ut_st_storage where nficheros = (select max(nficheros) from ut_st_storage)")
+        maxficheros,cuenta_maxficheros = fetchsingle(cursor)
+        cursor.execute("select nsize_original,ccuenta from ut_st_storage where nsize_original = (select max(nsize_original) from ut_st_storage)")
+        maxsize_orig,cuenta_maxsize_orig = fetchsingle(cursor)
         
         print "*********************************"
         print "*** ESTADISTICAS DE SIGUCLEAN ***"
@@ -1705,8 +1707,8 @@ class shell(cmd.Cmd):
         print "Ficheros:\t",nficheros
         print "Tamaño Orig:\t",sizeToHuman(nsize_original)
         print "Tamaño Arch:\t",sizeToHuman(nsize)
-        print "Max ficheros:\t",maxficheros
-        print "Max tamaño:\t",sizeToHuman(maxsize_orig)
+        print "Max ficheros:\t",maxficheros,"(",cuenta_maxficheros,")"
+        print "Max tamaño:\t",sizeToHuman(maxsize_orig),"(",cuenta_maxsize_orig,")"
         
         
 
