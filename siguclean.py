@@ -181,6 +181,25 @@ def CheckModules():
         Print('ABORT: No existe el modulo cx_Oracle, instalelo')
         os._exit(False)
     
+def openLdap(reconnect):
+    if reconnect:
+        verb = "DEBUG-WARNING: Reabriendo"
+    else:
+        verb = "Abriendo"
+
+    if DEBUG: Debug(verb," conexión a ldap")
+    try:
+        global ldapCon
+        ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, 0)
+        ldap.set_option(ldap.OPT_REFERRALS,0)
+        ldapCon = ldap.initialize(LDAP_SERVER)
+        ldapCon.simple_bind_s(BIND_DN, WINDOWS_PASS)
+        config.status.ldapCon = True
+    except ldap.LDAPError, e:
+        Print(1,"ERROR: ",verb," conexión a ldap")
+        Print(e)
+        config.status.ldapCon = False    
+
 def CheckConnections():
     """Establece las conexiones a ldap y oracle"""
     
@@ -192,18 +211,10 @@ def CheckConnections():
         WINDOWS_PASS = raw_input('     Introduzca la clave de windows (administrador): ')
     if WINDOWS_PASS != "dummy":
         Print(1,'     comprobando conexion a ldap ... ',end='')
-        try:
-            global ldapCon
-            ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, 0)
-            ldap.set_option(ldap.OPT_REFERRALS,0)
-            ldapCon = ldap.initialize(LDAP_SERVER)
-            ldapCon.simple_bind_s(BIND_DN, WINDOWS_PASS)
-            config.status.ldapCon = True
+        openLdap(False)
+        if config.status.ldapCon is True:
             Print(1,"CORRECTO")
-        except ldap.LDAPError, e:
-            Print(1,"ERROR")
-            Print(e)
-            config.status.ldapCon = False
+
     #Oracle
     global ORACLE_PASS
     if not ORACLE_PASS:
@@ -1474,17 +1485,32 @@ class User(object):
             
     def deleteDN(self):
         "Borra el dn del usuario"
-        import ldap
+        #Dependiendo del tiempo transcurrido en el archivado, puede haberse superado
+        #el timeout de la conexión y haberse cerrado. En este caso se presentará la
+        #excepción ldap.SERVER_DOWN. Deberemos reabrir la conexión y reintentar el borrado
+        
+        #import ldap
         Print(1,'Borrando DN: ',self.dn)
         if self.dn is not None:
             try:            
                 if DRYRUN: return True
                 ldapCon.delete_s(self.dn)                
                 return True
+            except ldap.SERVER_DOWN:
+                #La conexión se ha cerrado por timeout, reabrimos
+                global ldapCon
+                openLdap(True) 
+                if config.status.ldapCon is True:
+                    try:
+                        ldapCon.delete_s(self.dn)    
+                        return True
+                    except ldap.LDAPError, e:
+                        Print(0,"Error borrando DN usuario despues de reconexion ",self.cuenta," ",e)
+                        self.failreason = formatReason(self.cuenta,reason.FAILDELETEDN,self.dn,self.parent.stats)
             except ldap.LDAPError, e:
                 Print(0,"Error borrando DN usuario ",self.cuenta," ",e)
                 self.failreason = formatReason(self.cuenta,reason.FAILDELETEDN,self.dn,self.parent.stats)
-        return False
+            return False
     
     def insertDN(self,tardir):
         "Como no es posible recuperar el SID no tiene sentido usarla"
