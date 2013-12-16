@@ -56,6 +56,7 @@ ABORTDECREASE   = True
 ABORTALWAYS     = False
 ABORTINSEVERITY = False
 fDebug = None
+fAllOutput = None
 
 #Filtro de exclusion de momtajes, lo inicializamos como algo imposible de cumplir
 MOUNT_EXCLUDE = "(?=a)b"
@@ -397,6 +398,8 @@ def Print(level,*args,**kwargs):
     if config.session:
         if hasattr(config.session,'log'):
             config.session.log.writeLog(cadena+trail,False)
+            config.session.log.writeAllOutput(cadena+trail,False)
+            
         
 def Debug(*args,**kwargs):
     """Formatea y archiva los mensajes de debug"""
@@ -417,11 +420,15 @@ def Debug(*args,**kwargs):
         else:
             trail = '\n'
         fDebug.write(timeStamp())
+        if fAllOutput is not None: fAllOutput.write(timeStamp())
         for string in args:
             fDebug.write(str(string))
+            if fAllOutput is not None: fAllOutput.write(str(string))
         fDebug.write(trail)
+        if fAllOutput is not None: fAllOutput.write(trail)
         fDebug.flush()
-    
+        if fAllOutput is not None: fAllOutput.flush()
+            
 def dnFromUser(user):
     """Devuelve la DN de un usuario de active directory"""
     
@@ -692,6 +699,7 @@ class Stats(object):
 class Log(object):
     "Clase que proporciona acceso a los logs"
     def __init__(self,session):
+        global fAllOutput
         self.session = session
         #Creamos el directorio logs si no existe. Si existe renombramos el anterior
         session.logsdir = session.tardir+"/logs"
@@ -719,6 +727,8 @@ class Log(object):
         self.fUsersList = open(session.logsdir+'/users.list','w')
         self.fBbddLog = open(session.logsdir+'/bbddlog','w')
         self.fFailReason = open(session.logsdir+'/failreason',"w")
+        self.fAllOutput = open(session.logsdir+'/alloutput',"w")
+        fAllOutput = self.fAllOutput
         
     def writeDone(self,string):
         self.fUsersDone.writelines(string+"\n")
@@ -761,6 +771,13 @@ class Log(object):
             self.fLogfile.write(string + trail)
             self.fLogfile.flush()        
         
+    def writeAllOutput(self,string,newline):
+        #En sesiones restore no escribimos el log
+        if not RESTORE:
+            trail = "\n" if newline else ""
+            self.fAllOutput.write(string + trail)
+            self.fAllOutput.flush()        
+
     def writeBbdd(self,string):
         try:
             self.fBbddLog.write(string+"\n")
@@ -1022,10 +1039,12 @@ class Session(object):
                 if not self.die(user,False):continue
             #... Archivamos ...
             if not user.archive(self.tardir):
+                Print(0,"ERROR: Archivando usuario ",user.cuenta)
                 if not self.die(user,True): continue
             self.tarsizes = self.tarsizes + user.tarsizes
             #... Borramos storage ...
             if not user.deleteStorage():
+                Print(0,"ERROR: Borrando storages de usuario ",user.cuenta)
                 if not self.die(user,True): continue
             #Lo siguiente solo lo hacemos si tiene cuenta windows
             if 'WINDOWS' in user.cuentas:
@@ -1045,6 +1064,7 @@ class Session(object):
                             #continue
             #Escribimos el registro de usuario archivado
             if not user.bbddInsert():
+                Print(0,"ERROR: Insertando storages en BBDD de usuario ",user.cuenta)
                 if not self.die(user,True): continue
             #Si hemos llegado aquí todo esta OK
             if ABORTDECREASE: self.abortCount = self.abortCount -1
@@ -1464,10 +1484,13 @@ class User(object):
                 self.tarsizes = self.tarsizes + storage.tarsize
         if not ret:
             Print(0,'WARNING: Error archivando usuario ',self.cuenta,' fs ',storage.key,' haciendo rollback')
-            self.rollback()
+            #Originalmente hacía aquí un rollback directamente y devolvía True.
+            #Devuelvo False y gestiono el rollback en la función die            
+            #self.rollback()
+            return False
         else:            
             Print(2,'INFO: El tamaño de los tars para ',self.cuenta,' es: ',self.tarsizes)
-        return True
+            return True
 
     def archiveDN(self,tardir):
         "Usando pickle archiva el objeto DN de AD"
