@@ -589,7 +589,7 @@ def valueslist(*args,**kwargs):
     return cadena
 
 
-reason = Enum('NOTINLDAP','NOMANDATORY',"FAILARCHIVE","FAILDELETE","FAILARCHIVEDN","FAILDELETEDN",'UNKNOWN',"ISARCHIVED","UNKNOWNARCHIVED","NODNINAD","EXPLICITEXCLUDED")
+reason = Enum('NOTINLDAP','NOMANDATORY',"FAILARCHIVE","FAILDELETE","FAILARCHIVEDN","FAILDELETEDN",'UNKNOWN',"ISARCHIVED","UNKNOWNARCHIVED","NODNINAD","EXPLICITEXCLUDED","INSERTBBDDSTORAGE")
 
 def formatReason(user,reason,attr,stats):
     """Formatea la razon de fallo devolviendo una cadena"""
@@ -1301,7 +1301,7 @@ class User(object):
                 if DEBUG: Debug("DEBUG-ERROR: (user-bbddInsert) Insertando: ",storage.key)                
                 oracleCon.rollback()
                 cursor.close()
-                self.failreason = formatReason(self.cuenta,reason.INSERTBBDDSTORAGE,storage.key,"----")
+                self.failreason = formatReason(self.cuenta,reason.INSERTBBDDSTORAGE,storage.key,self.parent.stats)
                 return False
         #Debo hacer un commit
         oracleCon.commit()
@@ -1493,6 +1493,8 @@ class User(object):
         
         #import ldap
         Print(1,'Borrando DN: ',self.dn)
+        global ldapCon
+
         if self.dn is not None:
             try:            
                 if DRYRUN: return True
@@ -1500,7 +1502,6 @@ class User(object):
                 return True
             except ldap.SERVER_DOWN:
                 #La conexión se ha cerrado por timeout, reabrimos
-                global ldapCon
                 openLdap(True) 
                 if config.status.ldapCon is True:
                     try:
@@ -1696,6 +1697,7 @@ class shell(cmd.Cmd):
         maxficheros,cuenta_maxficheros = fetchsingle(cursor)
         cursor.execute("select nsize_original,ccuenta from ut_st_storage where nsize_original = (select max(nsize_original) from ut_st_storage)")
         maxsize_orig,cuenta_maxsize_orig = fetchsingle(cursor)
+        cursor.close()
         
         print "*********************************"
         print "*** ESTADISTICAS DE SIGUCLEAN ***"
@@ -1710,8 +1712,49 @@ class shell(cmd.Cmd):
         print "Max ficheros:\t",maxficheros,"(",cuenta_maxficheros,")"
         print "Max tamaño:\t",sizeToHuman(maxsize_orig),"(",cuenta_maxsize_orig,")"
         
+    def do_arcinfo(self,line):
+        """Muestra información de archivado del usuario.
+           arcinfo usuario"""
+        from texttable import Texttable
+        CheckEnvironment()
         
+        cursor = oracleCon.cursor()
+        cursor.execute("select * from ut_st_storage where ccuenta = "+comillas(line))
+        rows = cursor.fetchall()   
 
+        if rows == []:
+            print "Usuario no archivado"
+        else:
+            table = Texttable()
+            table.add_row(["TARNAME","SIZE","ORIGSIZE","FILES"])
+            for row in rows:
+                table.add_row([os.path.basename(row[2]),sizeToHuman(row[3]),sizeToHuman(row[5]),row[6]])
+            print table.draw()
+    
+    def do_sql(self,line):
+        """Permite ejecutar una consulta sql directamente contra sigu"""
+        from texttable import Texttable
+        CheckEnvironment()
+
+        try:
+            cursor = oracleCon.cursor()
+            cursor.execute(line)
+            rows = cursor.fetchall()
+            col_names = []
+            for i in range(0,len(cursor.description)):
+                col_names.append(cursor.description[i][0])
+        except BaseException,e:
+            print "ERROR: ",e
+            return
+            
+        if rows == []:
+            print "No results"
+        else:
+            table = Texttable(0)
+            table.header(col_names)
+            #table.set_deco(Texttable.BORDER | Texttable.HLINES | Texttable.VLINES)
+            table.add_rows(rows,header=False)
+            print table.draw()        
         
         
     def do_quit(self,line):
