@@ -24,6 +24,9 @@ RESTORE = False
 RESTORING = False
 TARDIR = None
 EXCLUDEUSERSFILE = None
+CONSOLIDATE = False
+NUMSCHASERVICES = 5
+
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
@@ -459,6 +462,51 @@ def ldapFromSigu(cuenta,attr):
     if DEBUG: Debug("DEBUG-INFO (ldapFromSigu): tmplist = ",tmpList)
     return tmpList.strip().split(':')[1].strip() if tmpList else None
     
+def schaFromLdap(cuenta):
+    "Devuelve un diccionario con los permisos de la cuenta"
+    Q_LDAP_SIGU = 'select sigu.ldap.uf_leeldap(\''+cuenta+'\',\'schacuserstatus\') from dual'
+    cursor = oracleCon.cursor()
+    cursor.execute(Q_LDAP_SIGU)     
+    tmpList = cursor.fetchall()
+    tmpList = str(tmpList[0][0]).replace(' schacuserstatus :','').split()
+    #Convertimos en un diccionario
+    try:
+        ret = dict([tuple(x.split(":")) for x in tmpList])
+        return ret
+    except:
+        #Vemos si no ha devuelto nada
+        if x == "None":
+            return None
+        else:
+            return False
+            
+def isServicesOff(services):
+    if(len(services) < NUMSCHASERVICES):
+        return len(services)
+    for service in services.values():
+        if service != 'off':
+            return False
+    return True
+    
+def checkServices(userlist):
+    for user in userlist:
+        try:        
+            services = schaFromLdap(user)
+            if services is None:
+                Print(1,"INFO: Usuario ",user," tiene todos los servicios en ON")
+                continue
+            if services is False:
+                Print(1,"ERROR: Consultando los servicios de ",user)
+                continue
+            ret = isServicesOff(services)
+            if ret is False:
+                Print(1,"INFO: Usuario ",user," no tiene todos los servicios en OFF")
+            elif ret is not True:
+                Print(1,"INFO: Usuario ",user," tiene menos servicios de los esperados a OFF")
+        except BaseException,e:
+            Print(0,"ERROR: Error desconocido consultando servicios del usuario ",user)
+            print e
+            
 def getListByDate(toDate , fromDate='1900-01-01'):
     """Devuelve una lista de cuentas entre dos fechas"""
     
@@ -533,6 +581,38 @@ def isArchived(user):
     except BaseException,e:
         if DEBUG: Debug("DEBUG-ERROR: (isArchived) ",e)
         return None
+
+def isArchivable(user):
+    """Comprueba si un usuario es archivable (esta caducado o cancelado)"""
+    try:
+        cursor = oracleCon.cursor()
+        cursor.execute("select CESTADO from ut_cuentas where CCUENTA = " + comillas(user)) 
+        ret = fetchsingle(cursor)
+    except BaseException,e:
+        Print(0,"ERROR: Consultando estado archivable del usuario ",user)
+        Print(0,"ERROR-CODE: ",e)
+        return None
+
+    cursor.close()
+    if ret == "":
+        return None
+    if ret == '4' or ret == '6':
+        return True
+    else:
+        return False
+    
+def hasArchivedData(user):
+    """Devuelve True si hay algun registro de archivado en ut_st_storage"""
+    try:
+        cursor = oracleCon.cursor()
+        cursor.execute("select unique ccuenta from ut_st_storage where ccuenta = "+comillas(user))
+        ret = fetchsingle(cursor)
+        if ret == "":
+            return False
+        else:
+            return True
+    except:
+        return False
         
 def hasCuentaNT(cuenta):
     """Comprueba si un usuario tiene cuenta NT"""
@@ -702,13 +782,19 @@ class Log(object):
         global fAllOutput
         self.session = session
         #Creamos el directorio logs si no existe. Si existe renombramos el anterior
-        session.logsdir = session.tardir+"/logs"
+        if CONSOLIDATE:
+            session.logsdir = session.tardir+"/consolidatelogs"
+        else:
+            session.logsdir = session.tardir+"/logs"
         if not os.path.exists(session.logsdir):
             os.mkdir(session.logsdir,0777)
         else:
             #Tenemos que tener en cuenta de si es una sesion restore
             #caso de no serla rotamos el log. 
             #si  lo es, usamos el mismo log solo para ller cmdline ya que el fork lo rotara
+            if CONSOLIDATE:
+                Print(0,"ABORT: Ya existe directorio de logs consolidados")
+                os._exit(False)
             if not RESTORE:            
                 newname = uniqueName(session.logsdir)
                 os.rename(session.logsdir,newname)
@@ -717,16 +803,18 @@ class Log(object):
         if RESTORE:
             return
         #Abrimos todos los ficheros
-        self.fUsersDone = open(session.logsdir+'/users.done','w')
-        self.fUsersFailed = open(session.logsdir+'/users.failed','w')
-        self.fUsersRollback = open(session.logsdir+'/users.rollback','w')
-        self.fUsersNoRollback = open(session.logsdir+'/users.norollback','w')
-        self.fUsersSkipped = open(session.logsdir+'/users.skipped','w')
-        self.fUsersExcluded = open(session.logsdir+'/users.excluded','w')
+        if not CONSOLIDATE:
+            self.fUsersDone = open(session.logsdir+'/users.done','w')
+            self.fUsersFailed = open(session.logsdir+'/users.failed','w')
+            self.fUsersRollback = open(session.logsdir+'/users.rollback','w')
+            self.fUsersNoRollback = open(session.logsdir+'/users.norollback','w')
+            self.fUsersSkipped = open(session.logsdir+'/users.skipped','w')
+            self.fUsersExcluded = open(session.logsdir+'/users.excluded','w')
+            self.fUsersList = open(session.logsdir+'/users.list','w')
+            self.fFailReason = open(session.logsdir+'/failreason',"w")
+
         self.fLogfile = open(session.logsdir+'/logfile','w')
-        self.fUsersList = open(session.logsdir+'/users.list','w')
         self.fBbddLog = open(session.logsdir+'/bbddlog','w')
-        self.fFailReason = open(session.logsdir+'/failreason',"w")
         self.fAllOutput = open(session.logsdir+'/alloutput',"w")
         fAllOutput = self.fAllOutput
         
@@ -796,7 +884,187 @@ class Log(object):
         fHandle.flush()
         
 class Session(object):
+
+    def logdict(self,logsdirs,pathname):
+        from collections import defaultdict            
+
+        tmpdict = defaultdict(list)
+        lineas = 0
+        for logsdir in logsdirs:
+            for line in open(self.tardir + "/" + logsdir + "/" + pathname).readlines():
+                tmpdict[line].append(None)
+                lineas = lineas +1
+        return tmpdict,lineas
+        
+    def consolidateLogs(self):
+        "Consolida los logs de una sesión con múltiples logs"
+        
+        cPath = self.tardir + "/consolidatelogs"
+        if os.path.exists(cPath):
+            Print(0,"ABORT: Los logs ya están consolidados")
+            return
+
+        logsdirs = [s for s in os.listdir(self.tardir) if s.startswith("logs")]   
+        
+        if len(logsdirs) == 1:
+            Print(0,"ABORT: Solo hay una carpeta de logs, no es necesario consolidar")
+            return
+
+        usersdonedict,lineas = self.logdict(logsdirs,'users.done')
+        print "Lineas: ", lineas," DoneDict: ",len(usersdonedict)
+        usersfaileddict,lineas = self.logdict(logsdirs,'users.failed')
+        print "Lineas: ", lineas," FailedDict: ",len(usersfaileddict)
+        userslistdict,lineas = self.logdict(logsdirs,'users.list')
+        print "Lineas: ", lineas," ListDict: ",len(userslistdict)
+        usersrollbackdict,lineas = self.logdict(logsdirs,'users.rollback')
+        print "Lineas: ", lineas," RollbackDict: ",len(usersrollbackdict)
+        
+        ppp = set(usersrollbackdict).difference(set(usersdonedict))
+        print "DifRollbackLen: ",len(ppp)
+        print ppp
+
+        return
+        
+    def repasaFs(self,fs):
+        """Esta funcion es totalmente accesoria, solo para ser llamada tras la decisión de
+        almacenar todos los storages de correo del usuario que se movieron a mano para correo.
+        La generalizo en funcion del FS por si hiciera falta en el futuro.
+        La estructura es similar al metodo start pero con menos pasos y restringido a los usuarios
+        ya procesados en la sesion"""
+        #leemos los usuarios que ya estan archivados        
+        usuarios = [s for s in os.listdir(self.tardir) if (not s.startswith("logs") and s != "consolidatelogs")]
+        
+        for usuario in usuarios:
+            pass
+            #El usuario puede haber cambiado su estado desde el ultimo archivado
+            #lo saltamnos en ese caso
+            
+            
     
+    def consolidateFs(self,fs):
+        import glob
+        "Consolida un FS de una sesion previa"
+        #PASO 1: Renombrar los archivados existentes
+        origindict = self.getOrigin(fs)
+        Q_UPDATE = 'UPDATE UT_ST_STORAGE SET '
+        Q_WHERE = " WHERE TTAR = "
+        oneshot = False
+        #Hay que tener en cuenta que en el diccionario puede haber más entradas que en
+        #los archivados, pues aquellos que fallaron posteriormente SI generaron 
+        #el log sobre el que nos hemos basado para averiguar los orígenes.
+        #Por tanto recorreremos el FS y usaremos el dict para consultar el nuevo nombre
+        
+        archives = [s for s in os.listdir(self.tardir) if (not s.startswith("logs") and s != "consolidatelogs")]
+        if DEBUG: Debug("DEBUG: Archives len es: ",len(archives))
+        
+        #Vemos la diferencia entre uno y otro, estos serán los que no se han procesado.
+        diff = set(origindict.keys()).difference(set(archives))
+        if DEBUG: Debug("DEBUG: La diferencia entre origenes y archives es: ",len(diff))
+        #Abrimos el cursor
+        try:
+            cursor = oracleCon.cursor()
+        except BaseException,e:
+            Print(0,"ABORT: ConsolidateFs, Error abriendo cursor de oracle")
+            os._exit(False)
+
+        #Bucle de renombrado
+        for archive in archives:
+            path = self.tardir + "/" + archive + "/*_" + fs + "_*"
+            try:            
+                origen = glob.glob(path)[0]
+            except:
+                Print(0,"WARNING: El usuario: ",archive," no tiene ",fs)
+                continue
+            fich = origen
+            fich = re.sub("_","@",fich)
+            destino = re.sub(fs,fs+"="+origindict[archive],fich)            
+
+            #Parámetros para el update de BBDD de sigu
+            setQ = "TTAR = " + comillas(destino)
+            updateQ = Q_UPDATE + setQ + Q_WHERE + comillas(origen)    
+            
+            #renombrar el fichero
+            try: 
+                if not DRYRUN:
+                    os.rename(origen,destino)
+                    try:
+                        cursor.execute(updateQ)
+                        oracleCon.commit()
+                        bbddlog.write(updateQ + "\n")
+                        bbddlog.flush()
+                    except BaseException,e:
+                        Print(0,"ERROR: Haciendo update, error: ",e," file: ",origen)
+                        #deshago el renombrado
+                        os.rename(destino,origen)
+                    if DEBUG:
+                        Debug("DEBUG: Renombrando ",origen," ---> ",destino)
+                else:
+                    Print(0,"INFO: Renombrando ",origen," ---> ",destino)
+                    Print(0,"INFO: UpdateQ= ",updateQ)
+            except:
+                Print(0,"ERROR: Renombrando ",origen," a ",destino)
+            
+            if not oneshot: 
+                confirm()
+                oneshot = True
+                
+        if not DRYRUN:
+            cursor.close()                            
+        return True
+
+        #PASO 2: Buscar nuevos storages para ese FS y archivarlos
+
+
+    def consolidate(self,fslist):
+        """Consolida una sesión. Le pasaremos una lista de los label de los fs a 
+        procesar"""
+        #Consolidamos los FS
+        if fslist is not None:
+            for fs in fslist:
+                if not self.consolidateFs(fs):
+                    Print(0,"ABORT: Consolidando fs ",fs)
+                    os._exit(False)
+                    
+        #Consolidamos los logs
+        if not self.consolidateLogs():
+            Print(0,"ABORT: Consolidando los logs")
+            os._exit(False)
+
+        return True
+    
+    def checkServices(self):
+        archives = [s for s in os.listdir(self.tardir) if (not s.startswith("logs") and s != "consolidatelogs")]
+        checkServices(archives)        
+        
+    def getOrigin(self,fs):
+        "Recupera la carpeta origen de un determinado archivado"
+        #Debo recorrer los ficheros logfile de todos los directorios logs
+        #de la sesión, quedándome con las líneas que contienen "Archivando <storage>"
+        #, extrayendo la cuarta columna y procesando esta para quitarle la primera parte que
+        #es la raiz, despues tengo el alternativo (o el natural) y por ultimo el usuario
+        
+        from collections import defaultdict
+        origindict = defaultdict(str)
+        
+        #Buscamos en mounts la base
+        regex = re.compile(MOUNT_EXCLUDE)
+        for mount in MOUNTS:
+            if mount['fs'] == fs:
+                raiz = get_mount_point(mount['label'],regex)
+        
+        logsdirs = [s for s in os.listdir(self.tardir) if s.startswith("logs")] 
+        
+        for logsdir in logsdirs:
+            for line in open(self.tardir+"/"+logsdir+"/logfile").readlines():
+                if line.startswith("Archivando "+fs):
+                    dummy,dummy,dummy,result,dummy = line.split(None,4)
+                    dummy,origin,user = result.replace(raiz,'').split('/')
+                    origindict[user] = origin
+        #En este punto ya tenemos un diccionario con las entradas únicas de 
+        #los origenes sacados de los logs                    
+        print "LenOriginDict: ",len(origindict)        
+        return origindict
+                
     def abort(self,severity):
         "Funcion que lleva el control sobre el proceso de abortar"
 
@@ -1699,6 +1967,11 @@ class shell(cmd.Cmd):
         for user in userlist:
             print user
             
+    def do_isarchivable(self,line):
+        """ Muestra si un usuario es archivable"""
+        CheckEnvironment()
+        print isArchivable(line)        
+            
     def do_stats(self,line):
         """Devuelve estadisticas sobre el proceso de archivado"""
         CheckEnvironment()
@@ -1778,7 +2051,64 @@ class shell(cmd.Cmd):
             #table.set_deco(Texttable.BORDER | Texttable.HLINES | Texttable.VLINES)
             table.add_rows(rows,header=False)
             print table.draw()        
+    
+    def do_ignorearchived(self,line):
+        """Muestra o cambia si debe ignorar los usuarios ya archivados en la selección
+            ignorearchived <True/False>"""
+
+        import ast
+        global IGNOREARCHIVED 
+        if line == "":
+            print IGNOREARCHIVED
+        else:
+            try:
+                IGNOREARCHIVED = ast.literal_eval(line)
+                print IGNOREARCHIVED
+            except BaseException,e:
+                print "Valor booleano incorrecto"
+   
+    def do_checkaltdir(self,line):
+        """Chequea y ofrece estadisticas de directorios alt"""
+        from collections import defaultdict
+        CheckEnvironment()
+        dictdir = defaultdict(list)
+        sumuserlist = 0
+        parentdir = line+"/"
+        altdirs = [s for s in os.listdir(parentdir) 
+                            if s.startswith(ALTROOTPREFIX)] 
+
+        for altdir in altdirs:
+            userlist = os.listdir(parentdir+altdir)
+            sumuserlist = sumuserlist + len(userlist)
+            for user in userlist:
+                dictdir[user].append(altdir)
+                
         
+        
+        fm = open("/tmp/multi-movidos","w")
+        fs = open("/tmp/single-movidos","w")
+
+        for k,v in dictdir.iteritems():
+            if len(v) > 1:
+                f = fm
+            else:
+                f = fs
+            
+            f.write(k)
+            if hasArchivedData(k):
+                f.write("\t"+"_ARC_")
+            else:
+                f.write("\t"+"NOARC")
+                
+            for value in v:
+                f.write("\t"+value)
+            f.write("\n")
+        f.close()
+        print "LENDICT: ",len(dictdir)
+        print "SUMLIST: ",sumuserlist
+        
+            
+            
         
     def do_quit(self,line):
         print "Hasta luego Lucas ...."
@@ -1820,6 +2150,7 @@ parser.add_argument('--fromfile',help='Nombre de fichero de entrada con usuarios
 parser.add_argument('--sessiondir',help='Carpeta para almacenar la sesion',dest='TARDIR',action='store',default=None)
 parser.add_argument('--restore',help='Restaura la sesion especificada',dest='RESTORE',action='store_true')
 parser.add_argument('--restoring',help='Opcion interna para una sesion que esta restaurando una anterior. No usar.',dest='RESTORING',action='store',default=False)
+parser.add_argument('--consolidate',help='Consolida la sesion especificada',dest='CONSOLIDATE',action='store_true')
 parser.add_argument('--exclude-userfile',help='Excluir los usuarios del fichero parámetro',dest='EXCLUDEUSERSFILE',action='store',default=None)
 args = parser.parse_args()
 
@@ -1840,7 +2171,7 @@ if args.interactive:
     shell().cmdloop()
     os._exit(True)
 
-if DEBUG and not RESTORE: Debug('DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE)
+if DEBUG and not RESTORE and not CONSOLIDATE: Debug('DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE)
 
 cmdline = sys.argv
 cmdlinestr = ' '.join(cmdline)
@@ -1854,11 +2185,11 @@ except BaseException,e:
 
 #Guardamos los argumentos
 #Si no es una sesión restore salvamos el string
-if not RESTORE:
+if not RESTORE and not CONSOLIDATE:
     f = open(sesion.logsdir+"/cmdline","w")
     f.write(cmdlinestr+"\n")
     f.close()
-else:
+elif RESTORE:
     #Leemos la linea de comando anterior y le añadimos --ignore-archived si no lo tenía
     #Siempre trabajaremos sobre la linea de comando original del directorio logs
     Print(0,"... Restaurando sesion anterior ...")
@@ -1879,7 +2210,13 @@ else:
     p = subprocess.Popen(cmdlinestr,shell=True) 
     p.wait()
     os._exit(True)
-
+elif CONSOLIDATE:
+    print sesion.logsdir
+    CheckEnvironment()
+    #sesion.checkServices()
+    sesion.consolidateFs('homemail')
+    os._exit(True)
+    
 CheckEnvironment()
 sesion.start()
 os._exit(True)
