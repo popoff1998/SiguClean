@@ -9,6 +9,7 @@ Created on Mon May 20 09:09:42 2013
 
 #Defines (globales)
 TEST = False
+ONESHOT = False
 DEBUG = False
 CHECKED = False
 EXTRADEBUG = True
@@ -27,6 +28,8 @@ EXCLUDEUSERSFILE = None
 CONSOLIDATE = False
 NUMSCHASERVICES = 5
 
+#SERVICIOS
+OFFSERVICES = {'L01': 'N', 'L02': 'N', 'L03': 'N', 'L04': 'N', 'L05': 'N'}
 
 #VARIABLES DE CONFIGURACION
 Q_GET_BORRABLES = 'SELECT CCUENTA FROM UT_CUENTAS WHERE (CESTADO=\'4\' OR CESTADO=\'6\')'
@@ -97,9 +100,11 @@ import collections
 from progressbar import *
 import subprocess
 
-state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR','UNARCHIVED')
+state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR','UNARCHIVED','NOTARCHIVABLE')
 
 #FUNCIONES
+
+    
 def fetchsingle(cursor):
     ret = cursor.fetchone()
     if len(ret) == 1:
@@ -464,14 +469,16 @@ def ldapFromSigu(cuenta,attr):
     
 def schaFromLdap(cuenta):
     "Devuelve un diccionario con los permisos de la cuenta"
-    Q_LDAP_SIGU = 'select sigu.ldap.uf_leeldap(\''+cuenta+'\',\'schacuserstatus\') from dual'
+    Q_LDAP_SIGU = 'select cServicio,tServicio,uf_valida_servicio_ldap(' + comillas(cuenta) + ',cServicio) from ut_servicios_mapa'
+    #Q_LDAP_SIGU = 'select sigu.ldap.uf_leeldap(\''+cuenta+'\',\'schacuserstatus\') from dual'
     cursor = oracleCon.cursor()
     cursor.execute(Q_LDAP_SIGU)     
     tmpList = cursor.fetchall()
-    tmpList = str(tmpList[0][0]).replace(' schacuserstatus :','').split()
+    #tmpList = str(tmpList[0][0]).replace(' schacuserstatus :','').split()
     #Convertimos en un diccionario
     try:
-        ret = dict([tuple(x.split(":")) for x in tmpList])
+        #ret = dict([tuple(x.split(":")) for x in tmpList])
+        ret = dict([(x[0],x[2]) for x in tmpList])
         return ret
     except:
         #Vemos si no ha devuelto nada
@@ -483,11 +490,19 @@ def schaFromLdap(cuenta):
 def isServicesOff(services):
     if(len(services) < NUMSCHASERVICES):
         return len(services)
-    for service in services.values():
-        if service != 'off':
+    for i in services:
+        if services[i] != 'N' and i in OFFSERVICES:
             return False
     return True
     
+def allServicesOff(user):
+    services = schaFromLdap(user)
+    #Si no devuelve nada, no tiene ningun servicio a off
+    if services is None:
+        return False
+    else:
+        return(isServicesOff(services))
+        
 def checkServices(userlist):
     for user in userlist:
         try:        
@@ -505,7 +520,7 @@ def checkServices(userlist):
                 Print(1,"INFO: Usuario ",user," tiene menos servicios de los esperados a OFF")
         except BaseException,e:
             Print(0,"ERROR: Error desconocido consultando servicios del usuario ",user)
-            print e
+            Print(0,"ERRORCODE: ",e)
             
 def getListByDate(toDate , fromDate='1900-01-01'):
     """Devuelve una lista de cuentas entre dos fechas"""
@@ -582,8 +597,8 @@ def isArchived(user):
         if DEBUG: Debug("DEBUG-ERROR: (isArchived) ",e)
         return None
 
-def isArchivable(user):
-    """Comprueba si un usuario es archivable (esta caducado o cancelado)"""
+def isExpired(user):
+    """Comprueba si un usuario esta esxpirado (caducado o cancelado)"""
     try:
         cursor = oracleCon.cursor()
         cursor.execute("select CESTADO from ut_cuentas where CCUENTA = " + comillas(user)) 
@@ -676,7 +691,7 @@ def valueslist(*args,**kwargs):
     return cadena
 
 
-reason = Enum('NOTINLDAP','NOMANDATORY',"FAILARCHIVE","FAILDELETE","FAILARCHIVEDN","FAILDELETEDN",'UNKNOWN',"ISARCHIVED","UNKNOWNARCHIVED","NODNINAD","EXPLICITEXCLUDED","INSERTBBDDSTORAGE")
+reason = Enum('NOTINLDAP','NOMANDATORY',"FAILARCHIVE","FAILDELETE","FAILARCHIVEDN","FAILDELETEDN",'UNKNOWN',"ISARCHIVED","UNKNOWNARCHIVED","NODNINAD","EXPLICITEXCLUDED","INSERTBBDDSTORAGE","NOTALLSERVICESOFF")
 
 def formatReason(user,reason,attr,stats):
     """Formatea la razon de fallo devolviendo una cadena"""
@@ -792,9 +807,6 @@ class Log(object):
             #Tenemos que tener en cuenta de si es una sesion restore
             #caso de no serla rotamos el log. 
             #si  lo es, usamos el mismo log solo para ller cmdline ya que el fork lo rotara
-            if CONSOLIDATE:
-                Print(0,"ABORT: Ya existe directorio de logs consolidados")
-                os._exit(False)
             if not RESTORE:            
                 newname = uniqueName(session.logsdir)
                 os.rename(session.logsdir,newname)
@@ -803,21 +815,36 @@ class Log(object):
         if RESTORE:
             return
         #Abrimos todos los ficheros
-        if not CONSOLIDATE:
-            self.fUsersDone = open(session.logsdir+'/users.done','w')
-            self.fUsersFailed = open(session.logsdir+'/users.failed','w')
-            self.fUsersRollback = open(session.logsdir+'/users.rollback','w')
-            self.fUsersNoRollback = open(session.logsdir+'/users.norollback','w')
-            self.fUsersSkipped = open(session.logsdir+'/users.skipped','w')
-            self.fUsersExcluded = open(session.logsdir+'/users.excluded','w')
-            self.fUsersList = open(session.logsdir+'/users.list','w')
-            self.fFailReason = open(session.logsdir+'/failreason',"w")
+        #if not CONSOLIDATE:
+        self.fUsersDone = open(session.logsdir+'/users.done','w')
+        self.fUsersFailed = open(session.logsdir+'/users.failed','w')
+        self.fUsersRollback = open(session.logsdir+'/users.rollback','w')
+        self.fUsersNoRollback = open(session.logsdir+'/users.norollback','w')
+        self.fUsersSkipped = open(session.logsdir+'/users.skipped','w')
+        self.fUsersExcluded = open(session.logsdir+'/users.excluded','w')
+        self.fUsersList = open(session.logsdir+'/users.list','w')
+        self.fFailReason = open(session.logsdir+'/failreason',"w")
 
         self.fLogfile = open(session.logsdir+'/logfile','w')
         self.fBbddLog = open(session.logsdir+'/bbddlog','w')
         self.fAllOutput = open(session.logsdir+'/alloutput',"w")
         fAllOutput = self.fAllOutput
-        
+        self.fCreateDone = open(session.logsdir+'/create.done',"w")
+        self.fRenameDone = open(session.logsdir+'/rename.done',"w")
+        self.fRenameFailed = open(session.logsdir+'/rename.failed',"w")
+
+    def writeCreateDone(self,string):
+        self.fCreateDone.writelines(string+"\n")
+        self.fCreateDone.flush()
+
+    def writeRenameDone(self,string):
+        self.fRenameDone.writelines(string+"\n")
+        self.fRenameDone.flush()
+
+    def writeRenameFailed(self,string):
+        self.fRenameFailed.writelines(string+"\n")
+        self.fRenameFailed.flush()
+            
     def writeDone(self,string):
         self.fUsersDone.writelines(string+"\n")
         self.fUsersDone.flush()
@@ -870,12 +897,12 @@ class Log(object):
         try:
             self.fBbddLog.write(string+"\n")
             self.fBbddLog.flush()
-        except IOError:
-            print "I/O Error({0}) : {1}".format(e.errno, e.strerror)
-        except ValueError:
-            print "Error de valor"
+        except IOError,e:
+            Print(0,"ERROR: (writeBbdd)", "I/O Error({0}) : {1}".format(e.errno, e.strerror))
+        except ValueError,e:
+            Print(0,"ERROR: (writeBbdd)","Error de valor: ",e)
         except AttributeError,e:
-            print "Error de atributo: ",e            
+            Print(0,"ERROR: (writeBbdd)","Error de atributo: ",e)            
 
     def writeIterable(self,fHandle,iterable):
         line = "\n".join(iterable)
@@ -884,6 +911,116 @@ class Log(object):
         fHandle.flush()
         
 class Session(object):
+    "Clase para procesar una sesion de archivado"
+
+    def __init__(self,sessionId,fromDate,toDate):
+        global MAXSIZE
+        config.session = self        
+        self.sessionId = sessionId
+        self.fromDate = fromDate
+        self.toDate = toDate
+        self.accountList = []
+        self.userList = []
+        self.excludeuserslist = []
+        self.tarsizes = 0
+        self.tardir = ''
+        self.abortCount = 0
+        self.abortLimit = ABORTLIMIT
+        self.abortDecrease = ABORTDECREASE
+        self.abortAlways = ABORTALWAYS
+        self.abortInSeverity = ABORTINSEVERITY
+        self.idsesion = None
+        self.logsdir = ''
+
+        #Comprobamos los parametros para poder ejecutar
+        if not self.sessionId: raise ValueError
+        if not self.fromDate: self.fromDate = '1900-01-01'
+        if not self.toDate: self.toDate = '2100-01-01'
+        #Comprobamos que existe TARDIR
+        if TARDIR is None:
+            raise Exception("No ha dado valor a sessiondir")
+        #Directorio para los tars
+        if os.path.exists(TARDIR):
+            if self.sessionId:            
+                self.tardir = TARDIR + '/' + self.sessionId
+            if not os.path.isdir(self.tardir):
+                os.mkdir(self.tardir,0777)
+        else:
+            #Abortamos porque no existe el directorio padre de los tars
+            Print(0,'ABORT: (session-start) No existe el directorio para tars: ',TARDIR)
+            os._exit(False)
+        self.log = Log(self)
+        self.stats = Stats(self)
+        #Tratamos MAXSIZE
+        #Intentamos convertir MAXSIZE a entero
+        try:
+            a = int(MAXSIZE)
+            MAXSIZE = a
+            if DEBUG is True: Debug("MAXSIZE era un entero y vale ",MAXSIZE)
+        except BaseException,e:
+            #Es una cadena vemos si es auto, convertible de humano o devolvemos error        
+            if MAXSIZE == "auto":
+                try:
+                    statfs = os.statvfs(TARDIR)
+                    MAXSIZE = int(statfs.f_bsize * statfs.f_bfree * 0.9)
+                    if DEBUG: Debug("MAXSIZE era auto y vale ",MAXSIZE)
+                except BaseException,e:
+                    Print(0,"ABORT: Calculando MAXSIZE para ",TARDIR)
+                    os._exit(False)
+            else:
+                a = humanToSize(MAXSIZE)
+                if a is not False:
+                    MAXSIZE = a
+                    if DEBUG: Debug("MAXSIZE era sizehuman y vale ",MAXSIZE)
+                else:
+                    Print(0,"ABORT: opción MAXSIZE invalida: ",MAXSIZE)
+                    os._exit(False)
+
+        #Tratamos el fichero EXCLUDEUSERSFILE
+        if EXCLUDEUSERSFILE is not None:
+            Print(0,"Excluyendo usuarios de ",EXCLUDEUSERSFILE)
+            if os.path.exists(EXCLUDEUSERSFILE):
+                try:
+                    f = open(EXCLUDEUSERSFILE,"r")
+                    #Leemos los usuarios quitando el \n final
+                    self.excludeuserslist.extend([line.strip() for line in f])
+                    f.close()
+                except BaseException,e:
+                    if DEBUG: Debug("Error leyendo EXCLUDEUSERSFILE: ",e)
+                    Print(0,"Error leyendo EXCLUDEUSERSFILE: ",FROMFILE)
+                    return False                  
+            else:
+                Print(0,"ABORT: No exite el fichero de exclusion de usuarios")
+                os._exit(False)
+
+        Print(0,'Procesando la sesion ',self.sessionId,' desde ',self.fromDate,' hasta ',self.toDate)
+ 
+    
+    def accountlistFromCurrent(self):
+        "Lee userlist en base a los usuarios archivados previamente"
+        #Comprobamos que no existe ya para sesiones que se hayan creado sin procesar.        
+        if not self.accountList:
+            try:
+                self.accountList = [s for s in os.listdir(self.tardir) if (not s.startswith("logs") and not s.startswith("consolidatelogs") and os.path.isdir(self.tardir + "/" + s))]
+                return True
+            except BaseException,e:
+                Print(0,"ABORT: No puedo recuperar la lista de usuarios previamente archivados")
+                Print(0,"ERROR: ",e)
+                return False
+        
+    def getSessionId(self):
+        "Devuelve el ID de la BBDD en base a la descripcion de sesion"
+        QGETIDSESION = "SELECT IDSESION FROM UT_ST_SESION WHERE DSESION = "
+        try:
+            cursor = oracleCon.cursor()
+            cursor.execute(QGETIDSESION + comillas(self.sessionId))     
+            self.idsesion = fetchsingle(cursor)
+            cursor.close()
+        except BaseException,e:
+             Print(0,"ERROR: Recuperando id de sesion ",self.sessionId)
+             Print(0,"ERROR: ",e)
+             return False
+        return self.idsesion
 
     def logdict(self,logsdirs,pathname):
         from collections import defaultdict            
@@ -921,30 +1058,13 @@ class Session(object):
         
         ppp = set(usersrollbackdict).difference(set(usersdonedict))
         print "DifRollbackLen: ",len(ppp)
-        print ppp
 
         return
         
-    def repasaFs(self,fs):
-        """Esta funcion es totalmente accesoria, solo para ser llamada tras la decisión de
-        almacenar todos los storages de correo del usuario que se movieron a mano para correo.
-        La generalizo en funcion del FS por si hiciera falta en el futuro.
-        La estructura es similar al metodo start pero con menos pasos y restringido a los usuarios
-        ya procesados en la sesion"""
-        #leemos los usuarios que ya estan archivados        
-        usuarios = [s for s in os.listdir(self.tardir) if (not s.startswith("logs") and s != "consolidatelogs")]
-        
-        for usuario in usuarios:
-            pass
-            #El usuario puede haber cambiado su estado desde el ultimo archivado
-            #lo saltamnos en ese caso
-            
-            
-    
     def consolidateFs(self,fs):
         import glob
         "Consolida un FS de una sesion previa"
-        #PASO 1: Renombrar los archivados existentes
+        Print(1,"\n**** CONSOLIDANDO ",fs," ****\n")
         origindict = self.getOrigin(fs)
         Q_UPDATE = 'UPDATE UT_ST_STORAGE SET '
         Q_WHERE = " WHERE TTAR = "
@@ -977,7 +1097,11 @@ class Session(object):
                 continue
             fich = origen
             fich = re.sub("_","@",fich)
-            destino = re.sub(fs,fs+"="+origindict[archive],fich)            
+            #Si la entrada de diccionario no es None            
+            if origindict[archive]:
+                destino = re.sub(fs,fs+"="+origindict[archive],fich)
+            else:
+                destino = fich
 
             #Parámetros para el update de BBDD de sigu
             setQ = "TTAR = " + comillas(destino)
@@ -988,32 +1112,36 @@ class Session(object):
                 if not DRYRUN:
                     os.rename(origen,destino)
                     try:
+                        self.log.writeBbdd(updateQ + "\n")
                         cursor.execute(updateQ)
-                        oracleCon.commit()
-                        bbddlog.write(updateQ + "\n")
-                        bbddlog.flush()
+                        self.log.writeRenameDone(origen+' '+destino)
                     except BaseException,e:
                         Print(0,"ERROR: Haciendo update, error: ",e," file: ",origen)
                         #deshago el renombrado
                         os.rename(destino,origen)
+                        self.log.writeRenameFailed(origen+' '+destino)
                     if DEBUG:
                         Debug("DEBUG: Renombrando ",origen," ---> ",destino)
                 else:
+                    #TEST: Para probar en pruebas el renombrado con dryrun
+                    #os.rename(origen,destino)
+                    self.log.writeBbdd(updateQ + "\n")
                     Print(0,"INFO: Renombrando ",origen," ---> ",destino)
                     Print(0,"INFO: UpdateQ= ",updateQ)
-            except:
+                    self.log.writeRenameDone(origen+' '+destino)
+            except BaseException,e:
                 Print(0,"ERROR: Renombrando ",origen," a ",destino)
+                Print(0,"ERROR: ",e)
             
-            if not oneshot: 
+            if not oneshot and ONESHOT: 
                 confirm()
                 oneshot = True
                 
         if not DRYRUN:
             cursor.close()                            
+            oracleCon.commit()
+
         return True
-
-        #PASO 2: Buscar nuevos storages para ese FS y archivarlos
-
 
     def consolidate(self,fslist):
         """Consolida una sesión. Le pasaremos una lista de los label de los fs a 
@@ -1042,15 +1170,20 @@ class Session(object):
         #de la sesión, quedándome con las líneas que contienen "Archivando <storage>"
         #, extrayendo la cuarta columna y procesando esta para quitarle la primera parte que
         #es la raiz, despues tengo el alternativo (o el natural) y por ultimo el usuario
-        
+        global DEBUG
         from collections import defaultdict
         origindict = defaultdict(str)
         
         #Buscamos en mounts la base
         regex = re.compile(MOUNT_EXCLUDE)
+        #Desactivamos temporalmente DEBUG
+        tmpDEBUG = DEBUG
+        DEBUG = False
         for mount in MOUNTS:
             if mount['fs'] == fs:
                 raiz = get_mount_point(mount['label'],regex)
+        #Recuperamos el valor de DEBUG
+        DEBUG = tmpDEBUG
         
         logsdirs = [s for s in os.listdir(self.tardir) if s.startswith("logs")] 
         
@@ -1058,11 +1191,15 @@ class Session(object):
             for line in open(self.tardir+"/"+logsdir+"/logfile").readlines():
                 if line.startswith("Archivando "+fs):
                     dummy,dummy,dummy,result,dummy = line.split(None,4)
-                    dummy,origin,user = result.replace(raiz,'').split('/')
+                    try:
+                        dummy,origin,user = result.replace(raiz,'').split('/')
+                    except ValueError:
+                        #Si no puede desempaquetar es porque no se hizo de un alternativo
+                        origin = None                        
+                        dummy,user = result.replace(raiz,'').split('/')
                     origindict[user] = origin
         #En este punto ya tenemos un diccionario con las entradas únicas de 
         #los origenes sacados de los logs                    
-        print "LenOriginDict: ",len(origindict)        
         return origindict
                 
     def abort(self,severity):
@@ -1110,87 +1247,7 @@ class Session(object):
             self.log.writeFailReason(user.failreason)
         return False
             
-    def __init__(self,sessionId,fromDate,toDate):
-        global MAXSIZE
-        config.session = self        
-        self.sessionId = sessionId
-        self.fromDate = fromDate
-        self.toDate = toDate
-        self.accountList = []
-        self.userList = []
-        self.excludeuserslist = []
-        self.tarsizes = 0
-        self.tardir = ''
-        self.abortCount = 0
-        self.abortLimit = ABORTLIMIT
-        self.abortDecrease = ABORTDECREASE
-        self.abortAlways = ABORTALWAYS
-        self.abortInSeverity = ABORTINSEVERITY
-        self.idsesion = 0
-        self.logsdir = ''
-
-        #Comprobamos los parametros para poder ejecutar
-        if not self.sessionId: raise ValueError
-        if not self.fromDate: self.fromDate = '1900-01-01'
-        if not self.toDate: self.toDate = '2100-01-01'
-        #Comprobamos que existe TARDIR
-        if TARDIR is None:
-            raise Exception("No ha dado valor a sessiondir")
-        #Directorio para los tars
-        if os.path.exists(TARDIR):
-            if self.sessionId:            
-                self.tardir = TARDIR + '/' + self.sessionId
-            if not os.path.isdir(self.tardir):
-                os.mkdir(self.tardir,0777)
-        else:
-            #Abortamos porque no existe el directorio padre de los tars
-            Print(0,'ABORT: (session-start) No existe el directorio para tars: ',TARDIR)
-            os._exit(False)
-        self.log = Log(self)
-        self.stats = Stats(self)
-        #Tratamos MAXSIZE
-        #Intentamos convertir MAXSIZE a entero
-        try:
-            a = int(MAXSIZE)
-            MAXSIZE = a
-            if DEBUG is True: Debug("MAXSIZE era un entero y vale ",MAXSIZE)
-        except BaseException,e:
-            #Es una cadena vemos si es auto, convertible de humano o devolvemos error        
-            if MAXSIZE == "auto":
-                try:
-                    statfs = os.statvfs(TARDIR)
-                    MAXSIZE = int(statfs.f_bsize * statfs.f_bfree * 0.9)
-                    if DEBUG: Debug("MAXSIZE era auto y vale ",MAXSIZE)
-                except BaseException,e:
-                    Print(0,"ABORT: Calculando MAXSIZE para ",TARDIR)
-                    os._exit(False)
-            else:
-                a = humanToSize(MAXSIZE)
-                if a is not False:
-                    MAXSIZE = a
-                    if DEBUG: Debug("MAXSIZE era sizehuman y vale ",MAXSIZE)
-                else:
-                    Print(0,"ABORT: opción MAXSIZE invalida: ",MAXSIZE)
-                    os._exit(False)
-        #Tratamos el fichero EXCLUDEUSERSFILE
-        if EXCLUDEUSERSFILE is not None:
-            Print(0,"Excluyendo usuarios de ",EXCLUDEUSERSFILE)
-            if os.path.exists(EXCLUDEUSERSFILE):
-                try:
-                    f = open(EXCLUDEUSERSFILE,"r")
-                    #Leemos los usuarios quitando el \n final
-                    self.excludeuserslist.extend([line.strip() for line in f])
-                    f.close()
-                except BaseException,e:
-                    if DEBUG: Debug("Error leyendo EXCLUDEUSERSFILE: ",e)
-                    Print(0,"Error leyendo EXCLUDEUSERSFILE: ",FROMFILE)
-                    return False                  
-            else:
-                Print(0,"ABORT: No exite el fichero de exclusion de usuarios")
-                os._exit(False)
-
-        Print(0,'Procesando la sesion ',self.sessionId,' desde ',self.fromDate,' hasta ',self.toDate)
-        
+       
     def getaccountList(self):
         if TEST:
             self.accountList = ['games','news','uucp','pepe']
@@ -1210,8 +1267,8 @@ class Session(object):
         #Distinguimos entre sesiones restoring y normales.
         #Para las normales generamos un nuevo indice.
         #Para las restoring usamos el previamente almacenado
-        if Debug: Debug("DEBUG-INFO: (session-bbddinsert) RESTORING es: ",RESTORING, " su tipo ",type(RESTORING))
-        if not RESTORING:        
+        if Debug: Debug("DEBUG-INFO: (session-bbddinsert) RESTORING es: ",RESTORING)
+        if not RESTORING and not CONSOLIDATE:        
             try:
                 cursor = oracleCon.cursor()
                 #Consigo el idsesion
@@ -1231,8 +1288,9 @@ class Session(object):
                 if DEBUG: Debug("DEBUG-ERROR: (sesion.bbddInsert) Error: ",e)
                 return False
         else:
-            #Leemos el valor de RESTORING 
-            self.idsesion = int(RESTORING)
+            #Leemos el valor de la sesion en curso
+            self.idsesion = int(self.getSessionId())
+            if DEBUG: Debug("DEBUG-INFO: Leido ID sesion: ",self.idsesion)
 
         f = open(self.logsdir+"/idsesion","w")
         f.write(str(self.idsesion)+"\n")
@@ -1244,13 +1302,14 @@ class Session(object):
         if DEBUG: Debug('DEBUG-INFO: (session.start) TARDIR es: ',TARDIR)
         print "VERBOSE: ",VERBOSE,"DEBUG: ",DEBUG,"PROGRESS: ",PROGRESS
         if haveprogress(): pbar=ProgressBar(widgets=[Percentage()," ",Bar(marker=RotatingMarker())," ",ETA()],maxval=1000000).start()
-        #Creo la lista de cuentas
-        if not self.accountList:
-            ret = self.getaccountList()
-        #Si ret es False ha fallado la recuperacion de la lista de cuentas
-        if not ret:
-            Print(0,"ABORT: No he podido recuperar la lista de usuarios. Abortamos ...")
-            os._exit(False)
+        if not CONSOLIDATE:
+            #Creo la lista de cuentas
+            if not self.accountList:
+                ret = self.getaccountList()
+            #Si ret es False ha fallado la recuperacion de la lista de cuentas
+            if not ret:
+                Print(0,"ABORT: No he podido recuperar la lista de usuarios. Abortamos ...")
+                os._exit(False)
         #Si la lista esta vacia no hay nada que procesar y salimos inmediatamente
         if len(self.accountList) == 0:
             Print(0,"EXIT: La lista de usuarios a procesar es vacia")
@@ -1282,6 +1341,7 @@ class Session(object):
         skip = False
         pp = 200000
         ip = 800000/len(self.userList)
+
         #Bucle principal de procesamiento de usuarios        
         for user in self.userList:
             #Salimos si hemos creado el fichero indicador de parada
@@ -1315,7 +1375,7 @@ class Session(object):
                 Print(0,"ERROR: Borrando storages de usuario ",user.cuenta)
                 if not self.die(user,True): continue
             #Lo siguiente solo lo hacemos si tiene cuenta windows
-            if 'WINDOWS' in user.cuentas:
+            if 'WINDOWS' in user.cuentas and not CONSOLIDATE:
                 #Si falla el archivado de DN continuamos pues quiere decir que no está en AD
                 #Si ha hecho el archivado y falla el borrado, hacemos rollback
                 if not user.archiveDN(self.tardir):
@@ -1352,9 +1412,9 @@ class Storage(object):
     
     def __init__(self,key,path,link,mandatory,parent):
         self.key = key
+        self.originalkey = key
         self.path = path
         self.link = link
-        self.mandatory = mandatory 
         self.tarpath = None
         self.parent = parent
         self.tarsize = 0
@@ -1362,7 +1422,14 @@ class Storage(object):
         self.accesible = None
         self.size_orig = 0
         self.files = 0
-        
+        self.morestoragelist = []
+        self.directstorage = False
+        self.secondary = False
+        if CONSOLIDATE:
+            self.mandatory = False
+        else:
+            self.mandatory = mandatory 
+
     def display(self):
         Print(1,self.key,"\t = ",self.path,"\t Accesible: ",self.accesible,"\t Estado: ",self.state)
 
@@ -1372,16 +1439,17 @@ class Storage(object):
         if not self.accesible:
             self.state = state.NOACCESIBLE
             return False
-        self.tarpath = rootpath + '/' + self.parent.cuenta + '_' + self.key + '_' + sessionId + ".tar.bz2"
+        self.tarpath = rootpath + '/' + self.parent.cuenta + '@' + self.key + '@' + sessionId + ".tar.bz2"
         Print(1,"Archivando ",self.key," from ",self.path," in ",self.tarpath," ... ")
         try:
             if DRYRUN and not SOFTRUN: 
                 #Calculo el tamaño sin comprimir y creo un fichero vacio para la simulacion                
                 f = open(self.tarpath,"w")
+                config.session.log.writeCreateDone(self.tarpath)
                 f.close()
                 self.tarsize = os.lstat(self.tarpath).st_size                
                 self.state = state.ARCHIVED                
-                self.bbddInsert()
+                #self.bbddInsert()
                 return True
             #Cambiamos temporalmente al directorio origen para que el tar sea relativo
             with cd_change(self.path):            
@@ -1394,13 +1462,15 @@ class Storage(object):
                 self.files = len(members)
                 #Fin del calculo
                 tar.close()
+                config.session.log.writeCreateDone(self.tarpath)
             self.tarsize = os.path.getsize(self.tarpath)
             self.state = state.ARCHIVED
             #Muevo el almacenamiento en la BBDD al finaldel proceso del usuario para que sea mas transaccional            
             #self.bbddInsert()
             return True
-        except:
-            Print(0,"ERROR: Archivando",self.key)
+        except BaseException,e:
+            Print(0,"ERROR: Archivando ",self.key)
+            if DEBUG: Debug("DEBUG-ERROR: ",e)
             self.state = state.TARFAIL
             return False
             
@@ -1493,7 +1563,7 @@ class Storage(object):
                 Print(0,"Error unarchiving ",self.key," to ",self.path," from ",self.tarpath," ... ")
                 return False
 
-    def exist(self):
+    def oldexist(self):
         """Comprueba la accesibilidad de un storage
         se tiene en cuenta que si no existe en el sitio por defecto
         puede existir en los root alternativos"""
@@ -1534,6 +1604,91 @@ class Storage(object):
         #Si llegamos aqui es que no existe
         self.accesible = False
         return False
+
+    def accesiblenow(self):
+        "Comprueba si esta accesible en este momento"
+        if os.path.exists(self.path):
+            self.accesible = True
+            return True
+        else:
+            self.accesible = False
+            return False
+        
+
+    def exist(self):
+        """Construye el storage
+        """
+        #Buscamos todos los storages para ese FS
+        parentdir = os.path.dirname(self.path)
+        basename = os.path.basename(self.path)
+        directpath = os.path.exists(self.path)        
+        firstpath = True
+ 
+        #Si estamos en una sesion de consolidacion es posible que el usuario
+        #haya "revivido" desde que se archivo. Por tanto si se trata de la ubicacion
+        #normal debemos saltarla.
+        if directpath and CONSOLIDATE:
+            if DEBUG: Debug("DEBUG-INFO: INCONSISTENCIA, el usuario ",self.parent.cuenta," ha resucitado, no proceso ",self.key)
+            directpath = False
+
+        #Como no hay path directo ni ubicaciones alternativas para este tipo de storage
+        #salimos  de la funcion retornando false.
+        if not directpath  and parentdir in config.altdirs and not config.altdirs[parentdir]:
+            if DEBUG: Debug("DEBUG-WARNING: User:",self.parent.cuenta," No existe path directo ni alternativo para ",self.originalkey," en ",parentdir)
+            self.accesible = False
+            return False
+        
+        #Buscamos en directorios alternativos del parentdir
+        #esta busqueda puede ser gravosa si se debe repetir para cada usuario por
+        #lo que una vez averiguados los alternativos se deben de almacenar globalmente
+        if not parentdir in config.altdirs: 
+            if DEBUG: Debug("DEBUG-INFO: No he construido aun la lista alternativa para ",self.originalkey," en ",parentdir," lo hago ahora ...")
+            config.altdirs[parentdir] = [s for s in os.listdir(parentdir) 
+                                        if s.startswith(ALTROOTPREFIX)] 
+
+        #Comprobamos el directo
+        if directpath:
+            if DEBUG: Debug("DEBUG-INFO: Encontrado path directo para ",self.originalkey)
+            self.accesible = True
+            self.directstorage = True
+            firstpath = False
+        
+        #¿Existen ubicaciones alternativas?
+        if config.altdirs[parentdir]:
+            if DEBUG: Debug("DEBUG-INFO: Existen ubicaciones alternativas de ",self.originalkey, " cuenta: ",self.parent.cuenta)
+        #Buscamos si existe en cualquiera de los directorios alternativos
+            for path in config.altdirs[parentdir]:
+                joinpath = os.path.join(parentdir,path,basename)
+                if os.path.exists(joinpath):
+                    if DEBUG: Debug("DEBUG-INFO: User:",self.parent.cuenta," encontrado alternativo para ",self.originalkey," en ",joinpath)
+                    #Tenemos que discriminar si es el primero o no
+                    if firstpath:
+                        #El storage alternativo encontrado es el primero de la lista
+                        #damos el cambiazo del directo, que no se va a procesar, por los
+                        #atributos del alternativo
+                        self.path = joinpath
+                        self.key = self.originalkey + "=" + path
+                        self.accesible = True
+                        firstpath = False
+                    else:
+                        #Este alternativo no es el primero por lo que va a la lista
+                        #morestoragelist
+                        altstorage = Storage(self.originalkey+"="+path,joinpath,None,self.mandatory,self.parent)
+                        altstorage.accesible = True
+                        altstorage.secondary = True
+                        self.morestoragelist.append(altstorage)
+        else:
+            if DEBUG: Debug("DEBUG-INFO: No existen ubicaciones alternativas de ",self.originalkey, " cuenta: ",self.parent.cuenta)
+            
+        
+        if not self.morestoragelist:
+            if DEBUG: Debug("DEBUG-INFO: No existen storages adicionales para ",self.parent.cuenta," de ",self.originalkey," en ",parentdir)
+
+        if not self.accesible:
+            return False
+        else:
+            return True
+            
         
 class User(object):
     global status    
@@ -1549,34 +1704,56 @@ class User(object):
         """Metodo que chequea los storages mandatory del usuario
         y si el usuario fue previamente archivado o no
         Asumo que la DN está bien porque acabo de buscarla."""
+        #es archivable? Si no tiene todos los servicios a off, aun caducado o cancelado no debemos procesarlo
+        if not allServicesOff(self.cuenta):
+            self.exclude = True
+            if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," no tiene todos los servicios a off")
+            self.failreason = formatReason(self.cuenta,reason.NOTALLSERVICESOFF,"---",self.parent.stats)
+            #Este usuario se va a excluir, pero en una sesion de consolidacion al ser esta comprobacion nueva
+            #hay que tener en cuenta que ya se archivo algo. Se me dice que aunque asi fuera, que solo se marque la
+            #razon de la exclusion y se deje lo demas como esta.   A mi no me convence porque deja flecos, pero bueno.          
+            return False
+        #Esta archivado?
         archived = isArchived(self.cuenta)
-        if archived is True:
-            status = False
-            self.failreason = formatReason(self.cuenta,reason.ISARCHIVED,"---",self.parent.stats) 
-            if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," ya estaba archivado")
-            self.exclude = True            
-            return status
-        elif archived is None:
-            status = False
-            self.failreason = formatReason(self.cuenta,reason.UNKNOWNARCHIVED,"---",self.parent.stats) 
-            if DEBUG: Debug("DEBUG-ERROR: (user.check) Error al comprobar estado de archivado de ",self.cuenta)
-            self.exclude = True            
-            return status
-        elif archived is not False:
-            status = False
-            self.failreason = formatReason(self.cuenta,reason.NOTARCHIVABLE,"---",archived) 
-            if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," no es archivable, estado de usuario: ",archived)
-            self.exclude = True            
-            return status
+        #Si la sesion es de consolidacion pasamos del chequeo de si esta archivado o no
+        if not CONSOLIDATE:
+            if archived is True:
+                status = False
+                self.failreason = formatReason(self.cuenta,reason.ISARCHIVED,"---",self.parent.stats) 
+                if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," ya estaba archivado")
+                self.exclude = True            
+                return status
+            elif archived is None:
+                status = False
+                self.failreason = formatReason(self.cuenta,reason.UNKNOWNARCHIVED,"---",self.parent.stats) 
+                if DEBUG: Debug("DEBUG-ERROR: (user.check) Error al comprobar estado de archivado de ",self.cuenta)
+                self.exclude = True            
+                return status
+            elif archived is not False:
+                status = False
+                self.failreason = formatReason(self.cuenta,reason.NOTARCHIVABLE,"---",archived) 
+                if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," no es archivable, estado de usuario: ",archived)
+                self.exclude = True            
+                return status
             
         #El usuario no esta archivado, compruebo sus storages            
         status = True
         for storage in self.storage:
+            #Si es secundario ya esta procesado y pasamos de el.
+            if storage.secondary:
+                continue
             if not storage.exist() and storage.mandatory:
                 status = False
                 self.failreason = formatReason(self.cuenta,reason.NOMANDATORY,storage.key,self.parent.stats)
                 if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," no ha pasado el chequeo")
                 break
+            else:
+                #Con el nuevo modelo, storage puede tener una lista de mas storages
+                #así que lo proceso
+                if storage.morestoragelist:
+                    for st in storage.morestoragelist:
+                        self.storage.append(st)
+
         return status
         
     def bbddInsert(self):
@@ -1674,6 +1851,7 @@ class User(object):
                             paseporaqui = True
                     storage = Storage(sto_key,sto_path,sto_link,m['mandatory'],self)
                     self.storage.append(storage)
+                    
         #Rellenamos el dn
         if self.dn:        
             status,self.dn,self.adObject,result_type = dnFromUser(self.cuenta)
@@ -1912,6 +2090,23 @@ class shell(cmd.Cmd):
             print ret
         except BaseException,e:
             print "Error consultando atributo ldap",e 
+    
+    def do_schacquery(self,line):
+        """Consulta el atributo schacUserStatus de ldap
+        schacquery <usuario>"""
+        global WINDOWS_PASS
+        WINDOWS_PASS = "dummy"
+        CheckEnvironment()
+        ret = schaFromLdap(line)
+        print ret
+        
+    def do_allservicesoff(self,line):
+        """Comprueba si todos los servicios de un usuario estan a off
+        allservicesoff <usuario>"""
+        global WINDOWS_PASS
+        WINDOWS_PASS = "dummy"
+        CheckEnvironment()
+        print allServicesOff(line)        
 
     def do_advsarchived(self,line):
         """
@@ -1967,13 +2162,15 @@ class shell(cmd.Cmd):
         for user in userlist:
             print user
             
-    def do_isarchivable(self,line):
-        """ Muestra si un usuario es archivable"""
+    def do_isexpired(self,line):
+        """ Muestra si un usuario esta expirado
+        isexpired <usuario>"""
         CheckEnvironment()
-        print isArchivable(line)        
+        print isExpired(line)        
             
     def do_stats(self,line):
-        """Devuelve estadisticas sobre el proceso de archivado"""
+        """Devuelve estadisticas sobre el proceso de archivado
+        stats"""
         CheckEnvironment()
         
         cursor = oracleCon.cursor()
@@ -2028,7 +2225,8 @@ class shell(cmd.Cmd):
             print table.draw()
     
     def do_sql(self,line):
-        """Permite ejecutar una consulta sql directamente contra sigu"""
+        """Permite ejecutar una consulta sql directamente contra sigu
+        sql <consulta>"""
         from texttable import Texttable
         CheckEnvironment()
 
@@ -2068,7 +2266,8 @@ class shell(cmd.Cmd):
                 print "Valor booleano incorrecto"
    
     def do_checkaltdir(self,line):
-        """Chequea y ofrece estadisticas de directorios alt"""
+        """Chequea y ofrece estadisticas de directorios alt para un directorio raiz dado
+        checkaltdir <directorio>"""
         from collections import defaultdict
         CheckEnvironment()
         dictdir = defaultdict(list)
@@ -2083,8 +2282,6 @@ class shell(cmd.Cmd):
             for user in userlist:
                 dictdir[user].append(altdir)
                 
-        
-        
         fm = open("/tmp/multi-movidos","w")
         fs = open("/tmp/single-movidos","w")
 
@@ -2185,11 +2382,11 @@ except BaseException,e:
 
 #Guardamos los argumentos
 #Si no es una sesión restore salvamos el string
-if not RESTORE and not CONSOLIDATE:
+if not RESTORE:
     f = open(sesion.logsdir+"/cmdline","w")
     f.write(cmdlinestr+"\n")
     f.close()
-elif RESTORE:
+else:
     #Leemos la linea de comando anterior y le añadimos --ignore-archived si no lo tenía
     #Siempre trabajaremos sobre la linea de comando original del directorio logs
     Print(0,"... Restaurando sesion anterior ...")
@@ -2210,15 +2407,27 @@ elif RESTORE:
     p = subprocess.Popen(cmdlinestr,shell=True) 
     p.wait()
     os._exit(True)
-elif CONSOLIDATE:
-    print sesion.logsdir
-    CheckEnvironment()
-    #sesion.checkServices()
-    sesion.consolidateFs('homemail')
-    os._exit(True)
-    
+
 CheckEnvironment()
-sesion.start()
+
+if not CONSOLIDATE:
+    sesion.start()
+else:
+    #Estamos en una sesion de consolidacion. Algunas comprobaciones previas
+    Print(0,"... Consolidando sesion anterior ...")
+    #Comprobamos que existe la sesion y leemos el id
+    if not sesion.getSessionId():
+        os._exit(False)
+    if DEBUG: Debug("DEBUG-INFO: Idsession es ",sesion.idsesion)        
+    #Generamos la lista de usuarios a partir de los ya archivados
+    if not sesion.accountlistFromCurrent():
+        os._exit(False)
+    if DEBUG: Debug("DEBUG-INFO: Recuperada lista usuarios desde FS. Numero usuarios: ",len(sesion.userList))
+    sesion.consolidateFs('homenfs')
+    sesion.consolidateFs('homemail')
+    sesion.consolidateFs('perfiles')
+    sesion.consolidateFs('homecifs')
+    sesion.start()
 os._exit(True)
 
 
