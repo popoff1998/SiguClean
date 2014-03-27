@@ -179,7 +179,9 @@ Ficheros de salida
 
 Siguclean genera una carpeta por cada usuario con su nombre con los archivados del mismo. El nombre de cada archivado es de la siguiente forma:
 
-*usuario_filesystemkey_sessiondir*.tar.bz2
+*usuario@filesystemkey@sessiondir*.tar.bz2
+
+*filesystemkey* variará dependiendo de si se trata de una ubicación alternativa o no. Si no es alternativa será tal cual, por ejemplo *homemail*, *homecifs*, etc. Si es alternativa tendrá el formato *filesystemkey=ubicacion-alternativa*, por ejemplo: *homemail=0_BORRADOS_20120620*
 
 Los ficheros de log se encuentran en principio en la carpeta logs en al raiz de *sessionid*. Existe un mecanismo de rotación de logs por si se lanzan ejecuciones sucesivas con el mismo identificador de sesión. El sistema de rotación ocasiona que:
 
@@ -483,3 +485,10 @@ siguclean -sigu-password XXXXXX --win-password YYYYYY -f 1900-01-01 -t 2012-12-3
 Esta sesión intentará archivar todos los usuario que fallaran anteriormente con el mayor nivel de relajación hasta final de 2012. Si aparte hemos arreglado las inconsistencias de los usuarios que fallaron en sigu, es muy posible que podamos archivar el 100% de los usuarios en dicho periodo.
 
 ¿Porqué entonces no usamos niveles de relajación altos desde el primer momento? Pues porque una sesión de archivado puede durar muchas horas y en ese tiempo pueden pasar muchas cosas (que el servidor nfs se caiga, que se desmonte una ubicación, etc). La máxima tiene que ser que un usuario **se archive completamente o no se archive**. Por tanto para grandes selecciones de usuario evitaremos en la medida de lo posible relajar el chequeo. Para sesiones "escoba" que procesarán proporcionalmente pocos usuarios si las podremos usar.
+
+
+
+
+
+
+ 
