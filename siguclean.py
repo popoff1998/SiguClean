@@ -27,6 +27,9 @@ TARDIR = None
 EXCLUDEUSERSFILE = None
 CONSOLIDATE = False
 NUMSCHASERVICES = 5
+LDAPRELAX = False
+
+
 
 #SERVICIOS
 OFFSERVICES = {'L01': 'N', 'L02': 'N', 'L03': 'N', 'L04': 'N', 'L05': 'N'}
@@ -101,6 +104,20 @@ from progressbar import *
 import subprocess
 
 state = Enum('NA','ARCHIVED','DELETED','TARFAIL','NOACCESIBLE','ROLLBACK','ERROR','DELETEERROR','UNARCHIVED','NOTARCHIVABLE')
+
+CADUCADO = '3'
+CANCELADO = '6'
+
+class mRelax(Enum):
+    NONE = '1'
+    CANCELADOS = '2'
+    TODOS = '3'
+    
+MANDATORYRELAX = mRelax.NONE
+
+class cEstado(Enum):
+    CADUCADO = '4'
+    CANCELADO = '6'
 
 #FUNCIONES
 
@@ -457,15 +474,29 @@ def dnFromUser(user):
 
 def ldapFromSigu(cuenta,attr):
     """Consulta un atributo ldap mediante sigu"""
+    #La funcion uf_leeldap busca en people o people-deleted segun el valor
+    #del tercer parametro (que sea B o no), asi que hacemos una busqueda en
+    #el primero y despues en el segundo en caso de que no encontremos nada
     
-    Q_LDAP_SIGU = 'select sigu.ldap.uf_leeldap(\''+cuenta+'\',\''+attr+'\') from dual'
+    Q_LDAP_SIGU = 'select uf_leeldap('+comillas(cuenta)+','+comillas(attr)+') from dual'
     
     cursor = oracleCon.cursor()
     cursor.execute(Q_LDAP_SIGU)     
     tmpList = cursor.fetchall()
     tmpList = tmpList[0][0]
-    if DEBUG: Debug("DEBUG-INFO (ldapFromSigu): tmplist = ",tmpList)
+    if EXTRADEBUG: Debug("DEBUG-INFO (ldapFromSigu1): ",cuenta," tmplist = ",tmpList)
+    if tmpList is not None:    
+        cursor.close()
+        return tmpList.strip().split(':')[1].strip()
+    #Hacemos la comprobacion en people-deleted
+    Q_LDAP_SIGU = 'select uf_leeldap('+comillas(cuenta)+','+comillas(attr)+','+comillas('B')+') from dual'
+    cursor.execute(Q_LDAP_SIGU)    
+    tmpList = cursor.fetchall()
+    tmpList = tmpList[0][0]
+    if EXTRADEBUG: Debug("DEBUG-INFO (ldapFromSigu2): ",cuenta," tmplist = ",tmpList)
+    cursor.close()
     return tmpList.strip().split(':')[1].strip() if tmpList else None
+        
     
 def schaFromLdap(cuenta):
     "Devuelve un diccionario con los permisos de la cuenta"
@@ -1048,16 +1079,16 @@ class Session(object):
             return
 
         usersdonedict,lineas = self.logdict(logsdirs,'users.done')
-        print "Lineas: ", lineas," DoneDict: ",len(usersdonedict)
+        #print "Lineas: ", lineas," DoneDict: ",len(usersdonedict)
         usersfaileddict,lineas = self.logdict(logsdirs,'users.failed')
         print "Lineas: ", lineas," FailedDict: ",len(usersfaileddict)
         userslistdict,lineas = self.logdict(logsdirs,'users.list')
-        print "Lineas: ", lineas," ListDict: ",len(userslistdict)
+        #print "Lineas: ", lineas," ListDict: ",len(userslistdict)
         usersrollbackdict,lineas = self.logdict(logsdirs,'users.rollback')
-        print "Lineas: ", lineas," RollbackDict: ",len(usersrollbackdict)
+        #print "Lineas: ", lineas," RollbackDict: ",len(usersrollbackdict)
         
         ppp = set(usersrollbackdict).difference(set(usersdonedict))
-        print "DifRollbackLen: ",len(ppp)
+        #print "DifRollbackLen: ",len(ppp)
 
         return
         
@@ -1365,6 +1396,12 @@ class Session(object):
             Print(1,"*** PROCESANDO USUARIO ",user.cuenta," ***")
             if not user.check():
                 if not self.die(user,False):continue
+            #BORRAR: COMPROBACION DE STORAGES
+            if not PROGRESS:
+                print "*** STORAGES DE ",user.cuenta
+                for st in user.storage:
+                    st.display()
+                print "************************"
             #... Archivamos ...
             if not user.archive(self.tardir):
                 Print(0,"ERROR: Archivando usuario ",user.cuenta)
@@ -1429,6 +1466,10 @@ class Storage(object):
             self.mandatory = False
         else:
             self.mandatory = mandatory 
+        #Superseed de MANDATORYRELAX
+        if MANDATORYRELAX == mRelax.TODOS or (MANDATORYRELAX == mRelax.CANCELADOS and self.parent.cEstado == CANCELADO):
+            self.mandatory = False
+
 
     def display(self):
         Print(1,self.key,"\t = ",self.path,"\t Accesible: ",self.accesible,"\t Estado: ",self.state)
@@ -1705,6 +1746,12 @@ class User(object):
         y si el usuario fue previamente archivado o no
         Asumo que la DN está bien porque acabo de buscarla."""
         #es archivable? Si no tiene todos los servicios a off, aun caducado o cancelado no debemos procesarlo
+        if not PROGRESS:
+            print "ESTADO USUARIO: ",self.cEstado
+            print "MRELAX: ",MANDATORYRELAX,"TIPO: ",type(MANDATORYRELAX)   
+            print "CANCELADO ES: ",CANCELADO
+            print "mRelax.TODOS: ",mRelax.TODOS
+        
         if not allServicesOff(self.cuenta):
             self.exclude = True
             if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," no tiene todos los servicios a off")
@@ -1742,7 +1789,12 @@ class User(object):
             #Si es secundario ya esta procesado y pasamos de el.
             if storage.secondary:
                 continue
+            #Aqu'viene la nueva comprobación en función de como tengamos el mandatoryrelax
+            #Si existe o no es mandatory, continuamos
+            
             if not storage.exist() and storage.mandatory:
+                #Si estamos aquí la cuenta es caducada o no hemos relajado el mandatory,
+                #aparte de que el storage no existe y es mandatory, por tanto fallamos
                 status = False
                 self.failreason = formatReason(self.cuenta,reason.NOMANDATORY,storage.key,self.parent.stats)
                 if DEBUG: Debug("DEBUG-WARNING: (user.check) El usuario ",self.cuenta," no ha pasado el chequeo")
@@ -1789,6 +1841,12 @@ class User(object):
             return ("LINUX","MAIL","WINDOWS")
         else:
             return ("LINUX","MAIL")
+
+    def estado(self):
+        Q_CESTADO = "select cestado from ut_cuentas where ccuenta = " + comillas(self.cuenta)
+        cursor = oracleCon.cursor()
+        cursor.execute(Q_CESTADO)  
+        return fetchsingle(cursor)        
             
     def __init__(self,cuenta,parent):
         try:
@@ -1803,13 +1861,17 @@ class User(object):
         self.adObject = None
         self.failreason = None
         self.cuenta = cuenta
+        #OJO: Aquí relleno el estado consultándolo de sigu usuario a usuario
+        #sería más óptimo hacerlo en getlistbydate, pero de momento para no 
+        #modificar mucho lo hago así.
+        self.cEstado = self.estado()
         #Compruebo si esta explicitamente excluido
         if self.cuenta in self.parent.excludeuserslist:
             self.failreason = reason.EXPLICITEXCLUDED
             self.exclude = True
             return
             
-        if TEST:
+        if LDAPRELAX:
             self.homedir = cuenta
         else:
             try:            
@@ -2229,7 +2291,11 @@ class shell(cmd.Cmd):
         sql <consulta>"""
         from texttable import Texttable
         CheckEnvironment()
+        
+        formato,line = line.split(" ",1)
 
+        if formato != "short" and  formato != "long":
+            print "Debe especificar el formato (short o long)"
         try:
             cursor = oracleCon.cursor()
             cursor.execute(line)
@@ -2244,7 +2310,11 @@ class shell(cmd.Cmd):
         if rows == []:
             print "No results"
         else:
-            table = Texttable(0)
+            if formato == "short":
+                table = Texttable()
+            else:
+                table = Texttable(0)
+                
             table.header(col_names)
             #table.set_deco(Texttable.BORDER | Texttable.HLINES | Texttable.VLINES)
             table.add_rows(rows,header=False)
@@ -2349,6 +2419,8 @@ parser.add_argument('--restore',help='Restaura la sesion especificada',dest='RES
 parser.add_argument('--restoring',help='Opcion interna para una sesion que esta restaurando una anterior. No usar.',dest='RESTORING',action='store',default=False)
 parser.add_argument('--consolidate',help='Consolida la sesion especificada',dest='CONSOLIDATE',action='store_true')
 parser.add_argument('--exclude-userfile',help='Excluir los usuarios del fichero parámetro',dest='EXCLUDEUSERSFILE',action='store',default=None)
+parser.add_argument('--mandatory-relax',help='Nivel de chequeo de storages mandatory',dest='MANDATORYRELAX',action='store',default=mRelax.NONE)
+parser.add_argument('--ldap-relax',help='No tiene en cuenta si el usuario está o no en ldap',dest='LDAPRELAX',action='store_true')
 args = parser.parse_args()
 
 VERBOSE = args.verbosity
@@ -2368,7 +2440,7 @@ if args.interactive:
     shell().cmdloop()
     os._exit(True)
 
-if DEBUG and not RESTORE and not CONSOLIDATE: Debug('DEBUG-INFO: sessionId: ',sessionId,'fromdate: ',fromDate,' todate: ',toDate,' abortalways: ',ABORTALWAYS,' verbose ',VERBOSE)
+if DEBUG and not RESTORE and not CONSOLIDATE: Debug('DEBUG-INFO: SessionId: ',sessionId,' Fromdate: ',fromDate,' Todate: ',toDate,' Abortalways: ',ABORTALWAYS,' Verbose ',VERBOSE)
 
 cmdline = sys.argv
 cmdlinestr = ' '.join(cmdline)
@@ -2377,7 +2449,7 @@ try:
     sesion = Session(sessionId,fromDate,toDate)
 except BaseException,e:
     Print(0,'ABORT: Error en la creacion de la sesion')
-    print "ERROR: ",e
+    Print(0,"ERROR: ",e)
     os._exit(False)
 
 #Guardamos los argumentos
