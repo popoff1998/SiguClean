@@ -387,7 +387,48 @@ Max tamaño:	4.8 G ( p92juprr )
 
 **ignorearchived** *True|False*: Cambia el modificador global de ignorar o no los ya archivados. "ignorearchived True" sería el equivalente a haber invocado siguclean en modo interactivo con la opción --ignore-archived. Si parámetros nos dice el estado en el que está.
 
-**checkaltdir** *directorio*: Chequea y ofrece estadísticas de directorios alternativos apra un directorio raiz dado. Esto genera dos ficheros en /tmp: multi-movidos con aquellos usuarios que tienen varios diractorios en los alternativos y single-movidos para los usuarios que solo tienen un alternativo. Es útil para saber como va el estado de limpia de los directorios alternativos. Llegará un momento en que no sea necesario ejecutarla cuando todos los directorios alternativos hayan sido vaciados.
+**checkaltdir** *directorio*: Chequea y ofrece estadísticas de directorios alternativos apra un directorio raiz dado. Esto genera un fichero en /tmp con el basename del directorio seguido de "-ALTS". La estructura de este fichero es así ...
+
+```
+lr1vavak        NOARC   0_MOVIDOS_INACTIVOS_20130725
+sf3fetog        NOARC   0_MOVIDOS_INACTIVOS_20100426    0_MAIL_MOVIDO_20080313  0_BORRADOS_20120620
+m72casua        NOARC   0_MOVIDOS_INACTIVOS_20100426    0_MOVIDOS_INACTIVOS_20130725
+a32gocaa        NOARC   0_MOVIDOS_INACTIVOS_20100426    0_MAIL_MOVIDO_20080313  0_BORRADOS_20120620
+m62topuc        NOARC   0_MOVIDOS_INACTIVOS_20100426
+p62namaf        _ARC_   0_BORRADOS_20120620
+d22sisiv        NOARC   0_MOVIDOS_INACTIVOS_20130725
+u52momia        NOARC   0_MOVIDOS_INACTIVOS_20100426    0_MAIL_MOVIDO_20080313
+
+```
+
+Nos dice el usuario, si está archivado o no y la lista de ubicaciones alternativas donde tiene ficheros. Es útil para saber como va el estado de limpia de los directorios alternativos. Llegará un momento en que no sea necesario ejecutarla cuando todos los directorios alternativos hayan sido vaciados. 
+
+El comando da unas estadísticas al final como estas:
+
+```
+(Cmd) checkaltdir /nfs/MAIL
+****** STATS ALTERNATIVOS *******
+Total ubicaciones    6
+Total usuarios		10072
+    Archivados		35
+ No Archivados		10037
+Total ficheros		15532
+***** UBICACIONES ***************
+    4349 		0_MOVIDOS_INACTIVOS_20100426
+    600 		0_MAIL_MOVIDO_20080508
+    1877 		0_MAIL_MOVIDO_20080313
+    2011 		0_BORRADOS_20120620
+    5501 		0_MOVIDOS_INACTIVOS_20130725
+    1194 		0_MOVIDOS_CANCELADOS_20130724
+****** N. ALT POR USUARIO ******
+    1  files  6382 	users
+    2  files  2149 	users
+    3  files  1312 	users
+    4  files  229 	users
+
+```
+
+Aparte de estadísticas generales, nos dice cuantos ficheros hay en cada ubicación, y la distribución de usuarios por número de storages alternativos.
 
 **sesinfo**: Muestra estadísticas de todas las sesiones:
 
