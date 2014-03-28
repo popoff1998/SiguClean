@@ -388,9 +388,9 @@ Max tamaño:	4.8 G ( p92juprr )
 +----------+----------+----------+----------+----------+----------+----------+
 ```
 
-**ignorearchived** *True|False*: Cambia el modificador global de ignorar o no los ya archivados. "ignorearchived True" sería el equivalente a haber invocado siguclean en modo interactivo con la opción --ignore-archived. Si parámetros nos dice el estado en el que está.
+**ignorearchived** *True|False*: Cambia el modificador global de ignorar o no los ya archivados. "ignorearchived True" sería el equivalente a haber invocado siguclean en modo interactivo con la opción --ignore-archived. Sin parámetros nos dice el estado en el que está.
 
-**checkaltdir** *directorio*: Chequea y ofrece estadísticas de directorios alternativos apra un directorio raiz dado. Esto genera un fichero en /tmp con el basename del directorio seguido de "-ALTS". La estructura de este fichero es así ...
+**checkaltdir** *directorio*: Chequea y ofrece estadísticas de directorios alternativos para  un directorio raiz dado. Esto genera un fichero en /tmp con el basename del directorio seguido de "-ALTS". La estructura de este fichero es así ...
 
 ```
 lr1vavak        NOARC   0_MOVIDOS_INACTIVOS_20130725
@@ -488,7 +488,7 @@ siguclean -sigu-password XXXXXX --win-password YYYYYY -f 2012-01-01 -t 2012-12-3
 ```
 ### Caso de uso para una sesión que paramos por un problema sobrevenido###
 
-Imaginemos que comprobamos en la salida de siguclean que no se están archivando todos los storages alternativos de los usuarios, ya sea porque no están montadas las ubiaciones alternativas, porque no se han enlazado dentro de las principales o porque no hemos especificado (o hemos especificado mal) el prefijo para ubicaciones alternativas como sería este caso:
+Imaginemos que comprobamos en la salida de siguclean que no se están archivando todos los storages alternativos de los usuarios, ya sea porque no están montadas las ubicaciones alternativas, porque no se han enlazado dentro de las principales o porque no hemos especificado (o hemos especificado mal) el prefijo para ubicaciones alternativas como sería este caso:
 ```
 siguclean -sigu-password XXXXXX --win-password YYYYYY -f 2012-01-01 -t 2012-12-31 -n ENE2012DIC2012 --debug --maxsize auto --confirm --sessiondir /nfs/SIGUCLEAN -x /nfs/ --mandatory-relax 2 --progress -p 1_
 ```
@@ -504,7 +504,7 @@ Una vez completado tendremos correctamente archivados todos los usuarios que se 
 ```
 siguclean --n ENE2012DIC2012 --sessiondir /nfs/SIGUCLEAN --restore
 ```
-No es necesario ninguna opción más. La sesión de restauración usará las mismas opciones de la sesión original. Solo son necesarios los parámetros que nos permiten identificar de qué sesión se trata y donde está ubicada. Al terminar la sesión de restauración, el resultado será el mismo que si hubiéramos especificado correctamente la opción *-p* desde el principio.
+No es necesario ninguna opción más. La sesión de restauración usará las mismas opciones de la sesión original. Solo son necesarios los parámetros que nos permiten identificar de qué sesión se trata y dónde está ubicada. Al terminar la sesión de restauración, el resultado será el mismo que si hubiéramos especificado correctamente la opción *-p* desde el principio.
 
 Lógicamente si el problema venía por defecto de montajes de ubicaciones alternativas o por un fallo en la programación, deberemos arreglarlo previamente. En estos casos no sería necesario sobreescribir el parámetro *-p* ni editarlo del fichero *cmdline*.
 
@@ -516,17 +516,17 @@ Una vez terminado borramos el directorio */nfs/SIGUCLEAN/PRUEBA-ENE2012DIC2012* 
 
 ### Buenas prácticas ###
 
-El lanzamiento de una sesión de prueba con *--dry-run** es conveniente hacerlo siempre antes de lanzar la sesión de archivado. Debemos tener en cuenta que puede transcurrir mucho tiempo entre que lanzamos el último archivado, y en este tiempo pueden haber cambiado muchas cosas (haber quitado montajes, algún cambio en sigu que afecte a siguclean, etc). La sesión de prueba nos dará una imagen de como se va a desarrollar el archivado, los problemas generales que ocurrirán y los usuarios que inicialmente seguro que fallarán junto sus causas (en el fichero *failreason*).
+El lanzamiento de una sesión de prueba con *--dry-run* es conveniente hacerlo siempre antes de lanzar la sesión de archivado. Debemos tener en cuenta que puede transcurrir mucho tiempo entre que lanzamos el último archivado, y en este tiempo pueden haber cambiado muchas cosas (haber quitado montajes, algún cambio en sigu que afecte a siguclean, etc). La sesión de prueba nos dará una imagen de como se va a desarrollar el archivado, los problemas generales que ocurrirán y los usuarios que inicialmente seguro que fallarán junto sus causas (en el fichero *failreason*).
 
 De esta forma podemos arreglar todo lo incorrecto y evaluar si conviene intentar arreglar los problemas individuales con los usuarios que van a fallar. También podemos probar que resultados obtendriamos usando opciones de relajación.
 
-Yo no recomiendo abusar de las opciones de relajación en primera instancia. El *--mandatory-relax 3* solo deberiamos usarlo cuando queremos archivar si o si pocos usuarios que hemos comprobado que son antiguos, tienen ausencia de mandatorys identificada, etc.
+Yo no recomiendo abusar de las opciones de relajación en primera instancia. El *--mandatory-relax 3* solo deberiamos usarlo cuando queremos archivar sí o sí pocos usuarios que hemos comprobado que son antiguos, tienen ausencia de mandatorys identificada, etc.
 
 A estos efectos en cualquier momento podemos lanzar sesiones "escoba" que procesen todos los usuarios que hayan quedado sin procesar. Un ejemplo sería:
 ```
 siguclean -sigu-password XXXXXX --win-password YYYYYY -f 1900-01-01 -t 2012-12-31 -n RESTOHASTA2012 --debug --maxsize auto --confirm --sessiondir /nfs/SIGUCLEAN -x /nfs/ --mandatory-relax 3 --ldap-relax --progress -p 0_
 ```
-Esta sesión intentará archivar todos los usuario que fallaran anteriormente con el mayor nivel de relajación hasta final de 2012. Si aparte hemos arreglado las inconsistencias de los usuarios que fallaron en sigu, es muy posible que podamos archivar el 100% de los usuarios en dicho periodo.
+Esta sesión intentará archivar todos los usuarios que fallaron anteriormente con el mayor nivel de relajación hasta final de 2012. Si aparte hemos arreglado las inconsistencias de los usuarios que fallaron en sigu, es muy posible que podamos archivar el 100% de los usuarios en dicho periodo.
 
 ¿Porqué entonces no usamos niveles de relajación altos desde el primer momento? Pues porque una sesión de archivado puede durar muchas horas y en ese tiempo pueden pasar muchas cosas (que el servidor nfs se caiga, que se desmonte una ubicación, etc). La máxima tiene que ser que un usuario **se archive completamente o no se archive**. Por tanto para grandes selecciones de usuario evitaremos en la medida de lo posible relajar el chequeo. Para sesiones "escoba" que procesarán proporcionalmente pocos usuarios si las podremos usar.
 
