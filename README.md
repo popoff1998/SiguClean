@@ -225,7 +225,7 @@ Las razones pueden ser:
 - *FAILDELETEDN*: Ha habido un problema al borrar la DN del usuario de active directory.
 - *UNKNOWN*: Se ha producido un fallo desconocido en el proceso de archivado.
 - *INSERTBBDDSTORAGE*: Se ha producido un fallo en la inserción en la BBDD de sigu de los resultados del archivado.
-- 
+
 #### Razones de exclusión ####
 
 - *NOTINLDAP*: El usuario no tiene entrada en la rama *People* de ldap.
