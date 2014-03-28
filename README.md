@@ -224,13 +224,16 @@ Las razones pueden ser:
 - *FAILARCHIVEDN*: Ha habido un problema al archivar la DN del usuario de active directory.
 - *FAILDELETEDN*: Ha habido un problema al borrar la DN del usuario de active directory.
 - *UNKNOWN*: Se ha producido un fallo desconocido en el proceso de archivado.
-
+- *INSERTBBDDSTORAGE*: Se ha producido un fallo en la inserción en la BBDD de sigu de los resultados del archivado.
+- 
 #### Razones de exclusión ####
 
 - *NOTINLDAP*: El usuario no tiene entrada en la rama *People* de ldap.
 - *ISARCHIVED*: El usuario ha sido excluido por estar ya archivado.
 - *UNKNOWNARCHIVED*: No se ha podido recuperar el estado de archivado o no de sigu.
 - *NODNINAD*: EL usuario no tiene DN en active directory teniendo que tenerla al tener cuenta windows. Lógicamente solo se producirá este error si la consulta de cuenta windows se hace solo por sigu y no por ad o both.
+- *EXPLICITEXCLUDED*: Se ha excluido explicitamente en el fichero de la opción *--exclude-userfile*.
+- *NOTALLSERVICESOFF*: El usuario no tiene todos sus servicios ldap a off y por tanto no debe ser archivado.
 
 
 Modo interactivo
