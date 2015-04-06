@@ -21,7 +21,7 @@ def getListByDate(toDate , fromDate='1900-01-01'):
                        '\',\'yyyy-mm-dd\') AND to_date(\''+ toDate +\
                        '\',\'yyyy-mm-dd\')'
     query = Q_GET_BORRABLES + ' AND ' + Q_BETWEEN_DATES
-    if DEBUG: print "getListByDate Query:",query
+    if DEBUG: print "get_list_by_date Query:",query
     cursor.execute(query)     
     userList = cursor.fetchall()
     return userList

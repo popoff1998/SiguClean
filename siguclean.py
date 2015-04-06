@@ -8,6 +8,8 @@ Created on Mon May 20 09:09:42 2013
 # from __future__ import print_function
 
 # Defines (globales)
+__version__="1.0.0"
+
 TEST = False
 ONESHOT = False
 DEBUG = False
@@ -2623,6 +2625,7 @@ parser.add_argument('-n', '--sessionname', help='Nombre de sesion', dest='sessio
 parser.add_argument('-p', '--altrootprefix', help='Prefijo para carpetas alternativas', dest='ALTROOTPREFIX',
                     action='store', default=None)
 parser.add_argument('-i', '--interactive', help='Iniciar sesion interactiva', action='store_true')
+parser.add_argument('-v', '--version', help='Mostrar la versión del programa', action='store_true')
 parser.add_argument('-a', '--abortalways', help='Abortar siempre ante un error inesperado', dest='ABORTALWAYS',
                     action='store_true', default='False')
 parser.add_argument('-d', '--abortdecrease',
@@ -2691,6 +2694,9 @@ for var in args.__dict__:
 if args.interactive:
     Shell().cmdloop()
     os._exit(True)
+
+if args.version:
+    print __version__
 
 if DEBUG and not RESTORE and not CONSOLIDATE:
     debug('DEBUG-INFO: SessionId: ', sessionId, ' Fromdate: ', fromDate,
