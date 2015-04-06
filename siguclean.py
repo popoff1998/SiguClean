@@ -2633,7 +2633,7 @@ parser.add_argument('-n', '--sessionname', help='Nombre de sesion', dest='sessio
 parser.add_argument('-p', '--altrootprefix', help='Prefijo para carpetas alternativas', dest='ALTROOTPREFIX',
                     action='store', default=None)
 parser.add_argument('-i', '--interactive', help='Iniciar sesion interactiva', action='store_true')
-parser.add_argument('-v', '--version', help='Mostrar la versión del programa', action='store_true')
+parser.add_argument('--version', help='Mostrar la versión del programa', action='store_true')
 parser.add_argument('-a', '--abortalways', help='Abortar siempre ante un error inesperado', dest='ABORTALWAYS',
                     action='store_true', default='False')
 parser.add_argument('-d', '--abortdecrease',
@@ -2705,6 +2705,7 @@ if args.interactive:
 
 if args.version:
     print __version__
+    os._exit(True)
 
 if DEBUG and not RESTORE and not CONSOLIDATE:
     debug('DEBUG-INFO: SessionId: ', sessionId, ' Fromdate: ', fromDate,
