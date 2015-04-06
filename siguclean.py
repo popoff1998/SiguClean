@@ -1175,21 +1175,20 @@ class Session(object):
             _print(0, "ABORT: Solo hay una carpeta de logs, no es necesario consolidar")
             return
 
-        # usersdonedict, lineas = self.logdict(logs_dirs, 'users.done')
-        # print "Lineas: ", lineas," DoneDict: ",len(usersdonedict)
+        usersdonedict, lineas = self.logdict(logs_dirs, 'users.done')
+        print "Lineas: ", lineas," DoneDict: ",len(usersdonedict)
 
-        # usersfaileddict, lineas = self.logdict(logs_dirs, 'users.failed')
-        # print "Lineas: ", lineas, " FailedDict: ", len(usersfaileddict)
+        usersfaileddict, lineas = self.logdict(logs_dirs, 'users.failed')
+        print "Lineas: ", lineas, " FailedDict: ", len(usersfaileddict)
 
-        # userslistdict, lineas = self.logdict(logs_dirs, 'users.list')
-        # print "Lineas: ", lineas," ListDict: ",len(userslistdict)
+        userslistdict, lineas = self.logdict(logs_dirs, 'users.list')
+        print "Lineas: ", lineas," ListDict: ",len(userslistdict)
 
-        # usersrollbackdict, lineas = self.logdict(logs_dirs, 'users.rollback')
-        # print "Lineas: ", lineas," RollbackDict: ",len(usersrollbackdict)
+        usersrollbackdict, lineas = self.logdict(logs_dirs, 'users.rollback')
+        print "Lineas: ", lineas," RollbackDict: ",len(usersrollbackdict)
 
-        # ppp = set(usersrollbackdict).difference(set(usersdonedict))
-        # print "DifRollbackLen: ",len(ppp)
-
+        ppp = set(usersrollbackdict).difference(set(usersdonedict))
+        print "DifRollbackLen: ",len(ppp)
         return
 
     def consolidate_fs(self, fs):
@@ -2290,6 +2289,15 @@ class Shell(cmd.Cmd):
     @staticmethod
     def parse(line):
         return line.split()
+
+    def do_consolidate(self,line):
+        """
+        Consolida una sesión anterior con resume
+        """
+        global WINDOWS_PASS
+        WINDOWS_PASS = "dummy"
+        check_environment()
+
 
     def do_count(self, line):
         """
