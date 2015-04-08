@@ -6,7 +6,7 @@ Created on Mon May 20 09:09:42 2013
 @author: tonin
 """
 # from __future__ import print_function
-
+import readline
 # Defines (globales)
 __version__="1.0.0"
 
