@@ -6,7 +6,7 @@ Created on Mon May 20 09:09:42 2013
 @author: tonin
 """
 # from __future__ import print_function
-import readline
+
 # Defines (globales)
 __version__="1.0.0"
 
@@ -102,6 +102,7 @@ import dateutil.parser
 from progressbar import *
 
 import config
+import readline
 
 
 state = Enum('NA', 'ARCHIVED', 'DELETED', 'TARFAIL', 'NOACCESIBLE', 'ROLLBACK', 'ERROR', 'DELETEERROR', 'UNARCHIVED',
