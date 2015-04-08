@@ -2571,6 +2571,11 @@ class Shell(cmd.Cmd):
                 print "Valor booleano incorrecto"
 
     @staticmethod
+    def do_version(line):
+        """Muestra la versión del programa"""
+        print __version__
+
+    @staticmethod
     def do_checkaltdir(line):
         """Chequea y ofrece estadisticas de directorios alt para un directorio raiz dado
         checkaltdir <directorio>"""
