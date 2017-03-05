@@ -213,3 +213,35 @@ pip-log.txt
 
 #Mr Developer
 .mr.developer.cfg
+
+#TONIN
+.idea.OLD/
+.idea
+3users
+SAL
+a72sacas
+aa1urhea
+ad_vs_archived.py
+baculasd.py
+beta.sh
+develop/
+diputacion.py
+infotar.py
+lista.cancelados
+lista.cancelados.JULIO
+m12mapos_homemail_PRUEBABETA.tar.bz2
+os
+pruebatar.py
+prutar.py
+siguclean
+siguclean.py.preluis
+silent.sh
+someusers
+tarfile
+test-infotar
+test.sh
+test1.py
+testad.py
+tests.py
+usuarios-excluidos
+

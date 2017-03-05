@@ -8,7 +8,7 @@ Created on Mon May 20 09:09:42 2013
 # from __future__ import print_function
 
 # Defines (globales)
-__version__="1.0.0"
+__version__ = "1.0.1"
 
 TEST = False
 ONESHOT = False
@@ -30,6 +30,7 @@ EXCLUDEUSERSFILE = None
 CONSOLIDATE = False
 NUMSCHASERVICES = 5
 LDAPRELAX = False
+CHECKARCHIVEDDATA = False
 
 # SERVICIOS
 OFFSERVICES = {'L01': 'N', 'L02': 'N', 'L03': 'N', 'L04': 'N', 'L05': 'N'}
@@ -43,7 +44,7 @@ Q_IGNORE_ARCHIVED = 'UF_ST_ULTIMA(CCUENTA) !=\'0\''
 Q_ONLY_ARCHIVED = 'UF_ST_ULTIMA(CCUENTA) =\'0\''
 
 # LDAP_SERVER = "ldap://ldap1.priv.uco.es"
-LDAP_SERVER = "ldaps://ucoapp09.uco.es"
+LDAP_SERVER = "ldaps://ucoad01.uco.es"
 BIND_DN = "Administrador@uco.es"
 USER_BASE = "dc=uco,dc=es"
 ORACLE_SERVER = 'ibmblade47/av10g'
@@ -106,7 +107,7 @@ import readline
 
 
 state = Enum('NA', 'ARCHIVED', 'DELETED', 'TARFAIL', 'NOACCESIBLE', 'ROLLBACK', 'ERROR', 'DELETEERROR', 'UNARCHIVED',
-             'NOTARCHIVABLE')
+             'NOTARCHIVABLE','LINKERROR')
 
 CADUCADO = '3'
 CANCELADO = '6'
@@ -678,6 +679,11 @@ def is_archived(user):
         ret = cursor.callfunc('UF_ST_ULTIMA', cx_Oracle.STRING, [user])
         cursor.close()
         if ret == "0":
+            #Chequeamos si aun estando marcado como archivado no tiene ficheros
+            if CHECKARCHIVEDDATA and not has_archived_data(user):
+                if DEBUG:
+                    debug("DEBUG-WARNING: (is_archived) archivado pero sin ficheros ", user )
+                return False
             return True
         else:
             if ret is None:
@@ -1179,19 +1185,19 @@ class Session(object):
             return
 
         usersdonedict, lineas = self.logdict(logs_dirs, 'users.done')
-        print "Lineas: ", lineas," DoneDict: ",len(usersdonedict)
+        print "Lineas: ", lineas, " DoneDict: ", len(usersdonedict)
 
         usersfaileddict, lineas = self.logdict(logs_dirs, 'users.failed')
         print "Lineas: ", lineas, " FailedDict: ", len(usersfaileddict)
 
         userslistdict, lineas = self.logdict(logs_dirs, 'users.list')
-        print "Lineas: ", lineas," ListDict: ",len(userslistdict)
+        print "Lineas: ", lineas, " ListDict: ", len(userslistdict)
 
         usersrollbackdict, lineas = self.logdict(logs_dirs, 'users.rollback')
-        print "Lineas: ", lineas," RollbackDict: ",len(usersrollbackdict)
+        print "Lineas: ", lineas, " RollbackDict: ", len(usersrollbackdict)
 
         ppp = set(usersrollbackdict).difference(set(usersdonedict))
-        print "DifRollbackLen: ",len(ppp)
+        print "DifRollbackLen: ", len(ppp)
         return
 
     def consolidate_fs(self, fs):
@@ -1280,7 +1286,7 @@ class Session(object):
         return True
 
     def consolidate(self, fslist):
-        """Consolida una sesión. Le pasaremos una lista de los label de los fs a 
+        """Consolida una sesión. Le pasaremos una lista de los label de los fs a
         procesar"""
         # Consolidamos los FS
         if fslist is not None:
@@ -1711,7 +1717,13 @@ class Storage(object):
             # Restauro el link si existe
             if self.link is not None:
                 if not DRYRUN:
-                    os.link(self.link, self.path)
+                    try:
+                        os.link(self.path, self.link)
+                    except BaseException, error:
+                        if DEBUG:
+                            debug("DEBUG_ERROR: Restableciendo link ", self.link, " a ",self.path," : ", error)
+                        self.state = state.LINKERROR
+                        return False
         try:
             # Si no está archivado no hay que borrar el tar
             if self.state not in (state.ARCHIVED, state.TARFAIL, state.UNARCHIVED):
@@ -2060,15 +2072,16 @@ class User(object):
             self.exclude = True
             return
 
-        if LDAPRELAX:
-            self.homedir = cuenta
-        else:
-            try:
-                self.homedir = os.path.basename(ldap_from_sigu(cuenta, 'homedirectory'))
-            except BaseException:
+        try:
+            self.homedir = os.path.basename(ldap_from_sigu(cuenta, 'homedirectory'))
+        except BaseException:
+            if LDAPRELAX:
+                self.homedir = cuenta
+            else:
                 self.failreason = reason.NOTINLDAP
                 self.exclude = True
                 return
+
         self.storage = []
         self.rootpath = ''
         self.cuentas = self.list_cuentas()
@@ -2095,7 +2108,7 @@ class User(object):
                         if status:
                             self.dn = dn
                         else:
-                            _print(0, "El usuario ", self.cuenta, "no tiene DN en AD y debería tenerla")
+                            _print(0, "El usuario ", self.cuenta, " no tiene DN en AD y debería tenerla")
                             self.dn = False
                         if DEBUG and not pase_por_aqui:
                             debug("DEBUG-INFO: Usuario: ", self.cuenta, " DN: ", self.dn)
@@ -2132,7 +2145,7 @@ class User(object):
     def rollback(self):
         """Metodo para hacer rollback de lo archivado
         El rollback consiste en:
-            - Recuperar de los tars los storages borrados            
+            - Recuperar de los tars los storages borrados
             - Borrar los tars"""
 
         _print(2, "*** ROLLBACK INIT *** ", self.cuenta)
@@ -2342,6 +2355,22 @@ class Shell(cmd.Cmd):
             print is_archived(line)
         except BaseException, error:
             print "Error recuperando el estado de archivado", error
+
+    @staticmethod
+    def do_hasarchiveddata(line):
+        """
+        Devuelve los archivados que tiene un usuario o False si no tiene
+        Es independiente del flag isarchived, aunque lo muestra tambien
+        <hasarchiveddata usuario>
+        """
+        try:
+            global WINDOWS_PASS
+            WINDOWS_PASS = "dummy"
+            check_environment()
+            print "ISARCHIVED: ", is_archived(line)
+            print "HASARCHIVEDDATA", has_archived_data(line)
+        except BaseException, error:
+            print "Error recuperando los datos de archivado", error
 
     @staticmethod
     def do_hascuentant(line):
@@ -2686,6 +2715,8 @@ parser.add_argument('--exclude-userfile', help='Excluir los usuarios del fichero
 parser.add_argument('--mandatory-relax', help='Nivel de chequeo de storages mandatory', dest='MANDATORYRELAX',
                     action='store', default=Mrelax.NONE)
 parser.add_argument('--ldap-relax', help='No tiene en cuenta si el usuario está o no en ldap', dest='LDAPRELAX',
+                    action='store_true')
+parser.add_argument('--check-archived-data', help='Chequea que el usuario efectivamente tiene archivados aunque sigu diga que está archivado', dest='CHECKARCHIVEDDATA',
                     action='store_true')
 args = parser.parse_args()
 

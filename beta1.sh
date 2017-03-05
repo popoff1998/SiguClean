@@ -1,0 +1,1 @@
+./siguclean.py -vvvvv --sigu-password mysigu --win-password c100cpb -f 1900-01-01 -t 2004-10-30  -n PRUEBABETA --debug --maxsize auto --confirm --sessiondir /nfs/SIGUCLEAN -x /nfs/ -p 0_ --dry-run --soft-run
