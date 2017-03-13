@@ -244,4 +244,7 @@ test1.py
 testad.py
 tests.py
 usuarios-excluidos
+users.*
+COPIA
+siguclean1.py
 
