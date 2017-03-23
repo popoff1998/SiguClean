@@ -51,6 +51,7 @@ class Log(object):
         self.fCreateDone = open(session.logsdir + '/create.done', "w")
         self.fRenameDone = open(session.logsdir + '/rename.done', "w")
         self.fRenameFailed = open(session.logsdir + '/rename.failed', "w")
+        self.fManualDelete = open(session.logsdir + '/storages.manualdelete',"w")
 
     def write_create_done(self, string):
         self.fCreateDone.writelines(string + "\n")
@@ -87,6 +88,11 @@ class Log(object):
         self.fUsersRollback.writelines(string + "\n")
         self.fUsersRollback.flush()
         self.session.stats.rollback += 1
+
+    def write_manualdelete(self, string):
+        self.fManualDelete.writelines(string + "\n")
+        self.fManualDelete.flush()
+        self.session.stats.manualdelete += 1
 
     def write_no_rollback(self, string):
         self.fUsersNoRollback.writelines(string + "\n")

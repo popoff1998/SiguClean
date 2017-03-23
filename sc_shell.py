@@ -9,6 +9,7 @@ import readline
 import cmd
 import ast
 from pprint import pprint
+import datetime
 
 import config
 from sc_funcs import *
@@ -83,6 +84,7 @@ class Shell(cmd.Cmd):
 
         storages [-l] <usuario1> <usuario2> ...
         """
+        import gc
         config.WINDOWS_PASS = "dummy"
         check_environment()
 
@@ -90,10 +92,17 @@ class Shell(cmd.Cmd):
         if not accounts:
             return
 
+        #Ponemos las variables para asegurar la ejecución completa de la función user::check()
+        _LDAPRELAX = config.LDAPRELAX
+        _BYPASS = config.BYPASS
+        _MANDATORYRELAX = config.MANDATORYRELAX
+        config.MANDATORYRELAX = config.Mrelax.TODOS
+        config.BYPASS = True
+        config.LDAPRELAX = True
+
         #Ajustamos atributos para simular una sesion
         self.excludeuserslist = []
         self.stats = Stats(self)
-        config.LDAPRELAX = True
 
         header = ["KEY","PATH","ACCESIBLE","ESTADO"]
         for account in accounts:
@@ -101,6 +110,7 @@ class Shell(cmd.Cmd):
             user.check()
             if not user.cEstado:
                 print account," no existe"
+                del user
                 continue
             accesible_storages = user.accesible_storages()
 
@@ -112,7 +122,18 @@ class Shell(cmd.Cmd):
                         print "\n"
             else:
                 print account," no tiene storages"
+            del user
+            gc.collect()
+        try:
+            if user:
+                del user
+        except:
+            pass
 
+        #Restauramos el valos de las variables.
+        config.BYPASS = _BYPASS
+        config.MANDATORYRELAX = _MANDATORYRELAX
+        config.LDAPRELAX = _LDAPRELAX
 
     def do_checktrash(self, line):
         """
@@ -198,9 +219,10 @@ class Shell(cmd.Cmd):
         Devuelve si una cuenta tiene estado archivado
         <isarchived usuario>
         """
+        config.WINDOWS_PASS = "dummy"
+        check_environment()
+
         try:
-            config.WINDOWS_PASS = "dummy"
-            check_environment()
             print is_archived(line)
         except BaseException, error:
             print "Error recuperando el estado de archivado", error
@@ -349,16 +371,26 @@ class Shell(cmd.Cmd):
 
         args,line = self.parse_with_args(line,['-c'],STRING)
 
-        try:
-            if line == '':
-                _fromDate = '1900-01-01'
-                _toDate = '2099-01-01'
+        if config.FROMFILE is not None:
+            userlist = []
+            ret = from_file(userlist)
+            if not ret:
+                print "Error recuperando la cuenta de usuarios de ", config.FROMFILE
             else:
-                _fromDate, _toDate = self.parse(line)
-            userlist = get_unarchived_by_date(_toDate, _fromDate)
-        except BaseException, error:
-            print "Error recuperando lista de usuarios no archivados de SIGU: ", error
+                print "Usuarios de ", config.FROMFILE, " archivables = ", len(userlist)
             return
+        else:
+            try:
+                if line == '':
+                    _fromDate = '1900-01-01'
+                    _toDate = '2099-01-01'
+                else:
+                    _fromDate, _toDate = self.parse(line)
+                userlist = get_unarchived_by_date(_toDate, _fromDate)
+            except BaseException, error:
+                print "Error recuperando lista de usuarios no archivados de SIGU: ", error
+                return
+
         if '-c' in args:
             _tmp = config.CHECKARCHIVEDDATA
             #Eliminamos los que no tienen storages
@@ -371,6 +403,17 @@ class Shell(cmd.Cmd):
         # noinspection PyTypeChecker
         for user in userlist:
             print user
+            if config.TOFILEHANDLE:
+                try:
+                    write_tofile(user)
+                except:
+                    return
+
+        if config.TOFILEHANDLE:
+            try:
+                close_tofile()
+            except:
+                return
 
     @staticmethod
     def do_isexpired(line):
@@ -544,26 +587,48 @@ class Shell(cmd.Cmd):
             table.add_row([sesion[0],sesion[1],sesion[2],size_to_human(sesion[3]),sesion[4]])
         print table.draw()
 
-    @staticmethod
-    def do_arcinfo(line):
-        """Muestra información de archivado del usuario.
-           arcinfo usuario"""
+    def do_arcinfo(self,line):
+        """
+        Muestra información de archivado del usuario.
+
+        arcinfo -s <usuario> [sesion]
+
+        Si no se especifica la sesión se muestran todas las sesiones
+        """
         from texttable import Texttable
+
+        args,items = self.parse_with_args(line,'-s',LIST)
+
+        if not items:
+            print "Se esperaba al menos un argumento"
+            return False
+        user = items[0]
+        try:
+            sesion = items[1]
+            trailquery = " AND idsesion = " + sesion
+        except:
+            sesion = None
+            trailquery = ""
 
         check_environment()
 
         cursor = config.oracleCon.cursor()
-        cursor.execute("select * from ut_st_storage where ccuenta = " + comillas(line))
+        query = "select * from ut_st_storage where ccuenta = " + comillas(user) + trailquery
+        cursor.execute(query)
         rows = cursor.fetchall()
 
-        if not rows:
-            print "Usuario no archivado"
+        if not '-s' in args:
+            if not rows:
+                print "Usuario no archivado"
+                return False
+            else:
+                table = Texttable()
+                table.add_row(["TARNAME", "SESION", "SIZE", "ORIGSIZE", "FILES"])
+                for row in rows:
+                    table.add_row([os.path.basename(row[2]), row[0], size_to_human(row[3]), size_to_human(row[5]), row[6]])
+                print table.draw()
         else:
-            table = Texttable()
-            table.add_row(["TARNAME", "SIZE", "ORIGSIZE", "FILES"])
-            for row in rows:
-                table.add_row([os.path.basename(row[2]), size_to_human(row[3]), size_to_human(row[5]), row[6]])
-            print table.draw()
+            return rows
 
     def do_sql(self,line):
         """Permite ejecutar una consulta sql directamente contra sigu
@@ -730,3 +795,162 @@ class Shell(cmd.Cmd):
 
     def __init__(self):
         cmd.Cmd.__init__(self)
+
+    def do_fromfile(self,line):
+        """
+        Selecciona el fichero fromfile para lectura de lista de Usuarios
+
+        fromfile [-d] <fichero>
+
+        Sin argumentos muestra si está definido FROMFILE.
+        La opción -d quita la definición que hubiera.
+        """
+
+        args,line = self.parse_with_args(line,['-d'],STRING)
+
+        if '-d' in args:
+            config.FROMFILE = None
+            print "Quitado fichero fromfile"
+            return
+
+        if not line:
+            if config.FROMFILE:
+                print config.FROMFILE
+            else:
+                print "Fromfile no estaba definido"
+            return
+
+        if os.path.exists(line):
+            config.FROMFILE = line
+        else:
+            print "No existe el fichero ",line
+
+    def do_tofile(self,line):
+        """
+        Selecciona el fichero de salida para los comandos que generan una lista de Usuarios
+
+        tofile fichero
+        """
+        if not line:
+            if config.TOFILE:
+                print config.TOFILE,
+                if config.TOFILEHANDLE:
+                    print " está abierto"
+                else:
+                    print "no está abierto"
+                return
+            else:
+                print "No se ha especificado TOFILE"
+                return
+
+        if not os.path.exists(line):
+            config.TOFILE = line
+            open_tofile()
+        else:
+            print "Ya existe el fichero ",line
+
+    def do_historia(self,line):
+        """
+        Muestra la historia de sigu de un usuario.
+
+        historia <usuario>
+        """
+
+        self.do_sql("select * from UT_HIST_CTAS where ccuenta='"+line+"'")
+
+    def do_servicesoff(self,line):
+        """
+        Muestra si un usuario tiene todos los servicios a off.
+
+        servicesoff <usuario>
+
+        Si el usuario no existe en LDAP devuelve True.
+        """
+
+        config.WINDOWS_PASS = "dummy"
+        check_environment()
+
+        print all_services_off(line)
+
+    def do_unarchive(self,line):
+        """
+        Desarchiva un usuario de una sesión determinada.
+
+        unarchive -f -b <usuario> <sesion>
+
+        La opción -f fuerza el desarchivado si ya existía el storage correspondiente.
+        La opción -b borra también los registros de la BBDD.
+        Si no se especifica la sesión se desarchiva la última.
+        """
+
+        config.WINDOWS_PASS = "dummy"
+        check_environment()
+        force = False
+        delbbdd = False
+        test = False
+
+        args,items = self.parse_with_args(line,['-f','-b'],LIST)
+
+        if '-f' in args:
+            force = True
+        if '-b' in args:
+            delbbdd = True
+
+        if len(items)<2:
+            print "Se esperaban dos argumentos"
+            return False
+        user = items[0]
+        sesion = items[1]
+
+        #Comprobaciones previas
+        rows = self.do_arcinfo(user + " " + sesion + " -s")
+
+        if not rows:
+            print "No hay nada que desarchivar"
+            return
+
+        #Mount points
+        if config.MOUNT_EXCLUDE == "(?=a)b":
+            config.MOUNT_EXCLUDE = "/nfs/"
+        check_mounts()
+
+        #Procesamos todos los archivados
+        for row in rows:
+            arcitems = parse_arctar(row[2])
+            if not arcitems:
+                #Era un dummy, procesamos el -b aquí
+                if delbbdd:
+                    delete_bbdd_storage(row[0],row[1],row[2])
+                continue
+            tarfile = row[2]
+
+            #averiguamos el destdir
+            if arcitems[3]:
+                traildir = "/" + arcitems[3] + "/" + row[1] + "/"
+            else:
+                traildir = "/" + row[1] + "/"
+            #Ahora tenemos que averiguar el basedir
+            for m in config.MOUNTS:
+                if m['fs'] == arcitems[2]:
+                    basedir = m['val']
+                    found = True
+                    break
+                else:
+                    found = False
+
+            if not found:
+                print "Fallo al encontrar el basedir de ",arcitems[2]
+                return
+
+            if test:
+                basedir = "/tmp/unarchive/" + arcitems[2]
+            destdir = basedir + traildir
+            if config.DEBUG:
+                debug("SOURCE: ",tarfile,"DESTDIR: ",destdir)
+
+            #desarchivamos
+            unarchived = unarchive_tar(tarfile,destdir,force)
+
+            #Borramos de la BBDD
+            if delbbdd and unarchived:
+                delete_bbdd_storage(row[0],row[1],row[2])

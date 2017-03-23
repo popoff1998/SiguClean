@@ -12,6 +12,11 @@ import contextlib
 import os
 import datetime
 import inspect
+from pprint import pprint
+import dateutil.parser
+import collections
+import tarfile
+
 
 import config
 
@@ -38,6 +43,9 @@ def fetch_single(cursor):
 @contextlib.contextmanager
 def cd_change(tmp):
     """Funcion para cambiar temporalmente a un directorio y volver al anterior despues"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
     cd = os.getcwd()
     os.chdir(tmp)
     try:
@@ -48,6 +56,8 @@ def cd_change(tmp):
 
 def have_progress():
     """Comprueba si se dan las condiciones de mostrar la barra de progreso"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     if config.PROGRESS and config.VERBOSE == 0:
         return True
@@ -57,6 +67,8 @@ def have_progress():
 
 def confirm():
     """Pide confirmacion por teclado"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     a = raw_input("Desea continuar S/N (N)")
     if a == "S":
@@ -67,6 +79,8 @@ def confirm():
 
 def iterable(obj):
     """Comprueba si un objeto es iterable"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     if isinstance(obj, collections.Iterable):
         return True
@@ -75,6 +89,8 @@ def iterable(obj):
 
 def _pprint(*_args):
     """Imprime de forma bonita algo, teniendo en cuenta si es iterable o no"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     for arg in _args:
         if iterable(arg):
@@ -85,6 +101,8 @@ def _pprint(*_args):
 
 def check_environment():
     """Chequea el entorno de ejecucion (instancia unica)"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     _print(1, "PASO1: Comprobando el entorno de ejecucion ...")
     if not config.CHECKED:
@@ -96,6 +114,8 @@ def check_environment():
 
 def check_modules():
     """Comprueba que son importables los módulos ldap y cx_Oracle"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     _print(1, "  Comprobando módulos necesarios")
 
@@ -125,6 +145,9 @@ def check_modules():
 
 
 def open_ldap(reconnect):
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
     if reconnect:
         verb = "DEBUG-WARNING: Reabriendo"
     else:
@@ -146,6 +169,8 @@ def open_ldap(reconnect):
 
 def check_connections():
     """Establece las conexiones a ldap y oracle"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     _print(1, "  Comprobando conexiones")
     import cx_Oracle
@@ -175,12 +200,14 @@ def check_connections():
 
 def get_mount_point(algo, exclude_regex):
     """Devuelve el punto de montaje que contiene algo en el export"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     try:
         with open("/proc/mounts", "r") as ifp:
             for line in ifp:
                 fields = line.rstrip('\n').split()
-                if config.DEBUG:
+                if config.EXTRADEBUG:
                     debug("DEBUG-INFO: EXPORT: ", fields[0], " MOUNT: ", fields[1], " ALGO: ", algo)
                 if algo in fields[0]:
                     # Es un posible montaje, vemos si esta excluido
@@ -202,6 +229,8 @@ def get_mount_point(algo, exclude_regex):
 
 def check_mounts():
     """Comprueba que los puntos de montaje están accesibles"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     _print(1, "  Comprobando el acceso a los Datos")
     try:
@@ -244,6 +273,8 @@ def check_mounts():
 
 def input_parameter(param, text, mandatory):
     """Lee un parametro admitiendo que la tecla intro ponga el anterior"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     while True:
         prevparam = param
@@ -260,6 +291,8 @@ def input_parameter(param, text, mandatory):
 
 def enter_parameters():
     """Lee por teclado los parametros de ejecucion"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     while True:
         print "PASO2: Parametros de la sesion ('c' para borrar)"
@@ -280,6 +313,8 @@ def enter_parameters():
 
 def pager(_iterable, page_size):
     """Funcion paginador"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     import itertools
 
@@ -291,6 +326,8 @@ def pager(_iterable, page_size):
 
 def imprime(user_list):
     """Imprime usando un paginador"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     my_pager = pager(user_list, 20)
     for page in my_pager:
@@ -303,10 +340,12 @@ def imprime(user_list):
 
 def size_to_human(size):
     """Convierte un numero de bytes a formato humano"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     symbols = ('B', 'K', 'M', 'G', 'T')
     indice = 0
-    # if EXTRADEBUG: debug("EXTRADEBUG-INFO: (size_to_human) Size antes de redondear es: ",size )
+    #if config.EXTRADEBUG: debug("EXTRADEBUG-INFO: (size_to_human) Size antes de redondear es: ",size )
     while True:
         if size < 1024:
             string = str(round(size, 1)) + " " + symbols[indice]
@@ -317,6 +356,8 @@ def size_to_human(size):
 
 def human_to_size(size):
     """Convierte un tamaño en formato humano a bytes"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     symbols = ('B', 'K', 'M', 'G', 'T')
     letter = size[-1:].strip().upper()
@@ -342,6 +383,9 @@ def time_stamp():
 
 def _print(level, *_args, **kwargs):
     """Formatea y archiva los mensajes por pantalla"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
     if not config.VERBOSE:
         config.VERBOSE = 0
     if kwargs != {}:
@@ -392,6 +436,9 @@ def debug(*_args, **kwargs):
 
 def dn_from_user(user):
     """Devuelve la DN de un usuario de active directory"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
 
     import ldap
     dn = tupla = result_type = None
@@ -411,23 +458,36 @@ def dn_from_user(user):
 
 def ldap_from_sigu(cuenta, attr):
     """Consulta un atributo ldap mediante sigu"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
     # La funcion uf_leeldap busca en people o people-deleted segun el valor
     # del tercer parametro (que sea B o no), asi que hacemos una busqueda en
     # el primero y despues en el segundo en caso de que no encontremos nada
+
+    #PRUEBA GORDA: Cerramos y reabrimos la conexion con sigu para evitar problema con +63 conexiones abiertas
+    #Parece que hay un pufo con la fución uf_leeldap que en determinadas circunstancias deja las conexiones ldap abiertas
+    if config.oracleCon and config.CLOSEORACLEONLDAP:
+        config.oracleCon.close()
+        config.oracleCon = cx_Oracle.connect('sigu/' + config.ORACLE_PASS + '@' + config.ORACLE_SERVER)
+    elif not config.oracleCon:
+        config.oracleCon = cx_Oracle.connect('sigu/' + config.ORACLE_PASS + '@' + config.ORACLE_SERVER)
 
     q_ldap_sigu = 'select uf_leeldap(' + comillas(cuenta) + ',' + comillas(attr) + ') from dual'
 
     cursor = config.oracleCon.cursor()
     cursor.execute(q_ldap_sigu)
     tmp_list = cursor.fetchall()
+    cursor.close()
     tmp_list = tmp_list[0][0]
     if config.EXTRADEBUG:
-        debug("DEBUG-INFO (ldapFromSigu1): ", cuenta, " tmp_list = ", tmp_list)
+        if tmp_list:
+            debug("DEBUG-INFO (ldapFromSigu1): ", cuenta, " tmp_list = ", tmp_list.strip())
     if tmp_list is not None:
-        cursor.close()
         return tmp_list.strip().split(':')[1].strip()
     # Hacemos la comprobacion en people-deleted
     q_ldap_sigu = 'select uf_leeldap(' + comillas(cuenta) + ',' + comillas(attr) + ',' + comillas('B') + ') from dual'
+    cursor = config.oracleCon.cursor()
     cursor.execute(q_ldap_sigu)
     tmp_list = cursor.fetchall()
     tmp_list = tmp_list[0][0]
@@ -439,6 +499,8 @@ def ldap_from_sigu(cuenta, attr):
 
 def scha_from_ldap(cuenta):
     """Devuelve un diccionario con los permisos de la cuenta"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     q_ldap_sigu = 'select cServicio,tServicio,uf_valida_servicio_ldap(' + comillas(
         cuenta) + ',cServicio) from ut_servicios_mapa'
@@ -446,6 +508,9 @@ def scha_from_ldap(cuenta):
     cursor = config.oracleCon.cursor()
     cursor.execute(q_ldap_sigu)
     tmp_list = cursor.fetchall()
+    #pprint(tmp_list)
+    cursor.close()
+
     # tmp_list = str(tmp_list[0][0]).replace(' schacuserstatus :','').split()
     # Convertimos en un diccionario
     x = "None"
@@ -462,6 +527,9 @@ def scha_from_ldap(cuenta):
 
 
 def are_services_off(services):
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
     if len(services) < config.NUMSCHASERVICES:
         return len(services)
     for i in services:
@@ -471,15 +539,27 @@ def are_services_off(services):
 
 
 def all_services_off(user):
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
     services = scha_from_ldap(user)
     # Si no devuelve nada, no tiene ningun servicio a off
     if services is None:
         return False
     else:
-        return are_services_off(services)
+        if not ldap_from_sigu(user,'uid'):
+            if config.DEBUG:
+                debug("El usuario ",user," no existe en ldap")
+            #El usuario no existe en LDAP
+            return True
+        else:
+            return are_services_off(services)
 
 
 def check_services(user_list):
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
     for user in user_list:
         try:
             services = scha_from_ldap(user)
@@ -501,6 +581,8 @@ def check_services(user_list):
 
 def get_list_by_date(to_date, from_date='1900-01-01'):
     """Devuelve una lista de cuentas entre dos fechas"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     q_between_dates = 'FCADUCIDAD  BETWEEN to_date(\'' + from_date + \
                       '\',\'yyyy-mm-dd\') AND to_date(\'' + to_date + \
@@ -594,8 +676,8 @@ def is_archived(user):
     try:
         cursor = config.oracleCon.cursor()
         # Llamo a la función uf_st_ultima
-        ret = cursor.callfunc('UF_ST_ULTIMA', cx_Oracle.STRING, [user])
-        _print(2,"RET_UF_ST_ULTIMA: ",ret)
+        ret = cursor.callfunc('UF_ST_ULTIMA_TONIN', cx_Oracle.STRING, [user])
+        _print(2,"USER: ",user," RET_UF_ST_ULTIMA_TONIN: ",ret)
         cursor.close()
         if ret == "0":
             #Chequeamos si aun estando marcado como archivado no tiene ficheros
@@ -621,17 +703,19 @@ def is_archived(user):
 
 def is_expired(user):
     """Comprueba si un usuario esta expirado (caducado o cancelado)"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     try:
         cursor = config.oracleCon.cursor()
         cursor.execute("select CESTADO from ut_cuentas where CCUENTA = " + comillas(user))
         ret = fetch_single(cursor)
+        cursor.close()
     except BaseException, error:
         _print(0, "ERROR: Consultando estado archivable del usuario ", user)
         _print(0, "ERROR-CODE: ", error)
         return None
 
-    cursor.close()
     if ret == "":
         return None
     if ret == '4' or ret == '6':
@@ -649,6 +733,7 @@ def has_archived_data(user):
         cursor = config.oracleCon.cursor()
         cursor.execute("select unique ccuenta from ut_st_storage where ccuenta = " + comillas(user))
         ret = fetch_single(cursor)
+        cursor.close()
         if ret == "":
             return False
         else:
@@ -659,6 +744,8 @@ def has_archived_data(user):
 
 def has_cuenta_nt(cuenta):
     """Comprueba si un usuario tiene cuenta NT"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     import ldap
 
@@ -670,6 +757,7 @@ def has_cuenta_nt(cuenta):
         cursor = config.oracleCon.cursor()
         cursor.execute(query)
         stat_sigu = cursor.fetchall()
+        cursor.close()
 
     if config.NTCHECK == 'ad' or config.NTCHECK == 'both':
         filtro = "(&(CN=" + cuenta + ")(!(objectClass=contact)))"
@@ -701,32 +789,30 @@ def comillas(cadena):
 
 def values_list(*_args, **kwargs):
     """Devuelve una cadena con una serie de valores formateados para sentencia sql"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     _ = kwargs
     cadena = '('
     size = len(_args)
     arg_number = 1
+    date_pattern = re.compile("....-..-..")
+
     for x in _args:
-        # Parseamos primero para ver si puede ser una fecha
-        try:
-            _ = dateutil.parser.parse(x)
-            # Es una fecha parseable
-            cad = 'TO_DATE(' + comillas(x) + ',\'YYYY-MM-DD\')'
-        except BaseException:
-            if type(x) is str:
-                cad = comillas(x)
+        if type(x) is str:
+            if date_pattern.match(x):
+                # Es una fecha parseable
+                cad = 'TO_DATE(' + comillas(x) + ',\'YYYY-MM-DD\')'
             else:
-                cad = str(x)
+                cad = comillas(x)
+        else:
+            cad = str(x)
         cadena += cad
         if arg_number < size:
             cadena += ','
         arg_number += 1
     cadena += ')'
     return cadena
-
-
-reason = Enum('NOTINLDAP', 'NOMANDATORY', "FAILARCHIVE", "FAILDELETE", "FAILARCHIVEDN", "FAILDELETEDN", 'UNKNOWN',
-              "ISARCHIVED", "UNKNOWNARCHIVED", "NODNINAD", "EXPLICITEXCLUDED", "INSERTBBDDSTORAGE", "NOTALLSERVICESOFF")
 
 
 def format_reason(user, _reason, attr, stats):
@@ -739,12 +825,16 @@ def format_reason(user, _reason, attr, stats):
 def filter_archived(user_list):
     """Filtra de una lista de usuarios dejando solo los que no estan archivados
     descontando los que dan otro tipo de salida que no sea False"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     user_list[:] = [x for x in user_list if is_archived(x) is False]
 
 
 def from_file(user_list):
     """Lee la lista desde un fichero, teniendo en cuenta el filtro de exclusión"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
 
     if os.path.exists(config.FROMFILE):
         try:
@@ -753,7 +843,7 @@ def from_file(user_list):
             user_list.extend([line.strip() for line in _f])
             _f.close()
             # Si tenemos IGNOREARCHIVED filtramos la lista
-            if config.IGNOREARCHIVED:
+            if config.IGNOREARCHIVED is True:
                 filter_archived(user_list)
                 if config.EXTRADEBUG:
                     debug("EXTRADEBUG-INFO: Lista filtrada: ", user_list)
@@ -770,6 +860,9 @@ def from_file(user_list):
 
 def unique_name(filename):
     """Devuelve un nombre unico para un fichero que se va a renombrar"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
     contador = 0
     while os.path.exists(filename + "." + str(contador)):
         contador += 1
@@ -778,6 +871,9 @@ def unique_name(filename):
 
 def display_table(header,lista):
     """ Muestra una tabla a partir de una lista"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
     from texttable import Texttable
 
     trows,tcols = os.popen('stty size','r').read().split()
@@ -804,9 +900,10 @@ class Stats(object):
         self.rollback = 0
         self.norollback = 0
         self.skipped = 0
+        self.manualdelete = 0
         self.inicio = datetime.datetime.now()
         self.fin = None
-        self.reason = [0] * len(reason)
+        self.reason = [0] * len(config.reason)
 
     def show(self):
         _print(0, "-------------------------------")
@@ -815,6 +912,8 @@ class Stats(object):
         _print(0, "Total:\t\t", self.total)
         _print(0, "Correctos:\t", self.correctos)
         _print(0, "Incorrectos:\t", self.total - self.correctos)
+        if config.MANUALDELETE:
+            _print(0, "ManualDelete:\t",self.manualdelete," storages")
 
         _print(0, "\n--- Detalles de fallos ---\n")
         _print(0, "Failed:\t\t", self.failed)
@@ -827,7 +926,7 @@ class Stats(object):
         _print(0, "\n--- Razones del fallo/exclusion ---\n")
         i = 0
         for r in self.reason:
-            _print(0, reason[i], ":\t", r)
+            _print(0, config.reason[i], ":\t", r)
             i += 1
 
         _print(0, "\n--- Rendimiento ---\n")
@@ -847,3 +946,103 @@ class Stats(object):
             else:
                 _rendimiento = elapsed.seconds / _users
                 _print(0, "Rendimiento:\t", _rendimiento, " sec/user")
+
+def open_tofile():
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
+    try:
+        config.TOFILEHANDLE = open(config.TOFILE, 'w')
+        return True
+    except BaseException,error:
+        print "Error abriendo tofile en ",config.TOFILE
+        print "ERROR: ",error
+        return False
+
+def write_tofile(line):
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
+    try:
+        config.TOFILEHANDLE.writelines(line+"\n")
+        config.TOFILEHANDLE.flush()
+        return True
+    except BaseException,error:
+        print "Error escribiendo en ",config.TOFILE
+        print "ERROR: ",error
+        return False
+
+def close_tofile():
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
+    try:
+        config.TOFILEHANDLE.close()
+        config.TOFILEHANDLE = None
+        return True
+    except BaseException,error:
+        print "Error cerrando ",config.TOFILE
+        print "ERROR: ",error
+        return False
+
+def parse_arctar(tarname):
+    """
+    Parsea un tarname para extraer el path de destino
+    """
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
+    #excluimos el DUMMY
+    if tarname.startswith('dummy'):
+        return None
+
+    pattern = re.compile("^([^@]*)@([^=@]*)=*([^@]*)@(.*)\.tar\.bz2")
+    fields = pattern.split(tarname)
+
+    #for field in fields:
+    #    print field
+    return fields
+
+def unarchive_tar(tarname,destdir,force):
+    """Des-archiva un tar"""
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
+    if not os.path.isdir(destdir):
+        try:
+            os.makedirs(destdir)
+        except BaseException, error:
+            _print(0,"Error creando directorio destino para unarchive")
+            return False
+    elif not force:
+            _print(0,"Existe el directorio ",destdir," y no especificó -f")
+            return False
+
+    _print(0, "Desarchivando ", tarname, " to ", destdir)
+    try:
+        tar = tarfile.open(tarname, "r:*")
+        tar.extractall(destdir)
+        tar.close()
+        return True
+    except BaseException,error:
+        _print(0, "Error extrayendo tar de ", tarname, " a ", destdir)
+        _print(0,"ERROR: ", error)
+        return False
+
+def delete_bbdd_storage(idsesion, ccuenta, ttar):
+    if config.TRACE:
+        traceprint(current_func(),current_parent())
+
+    try:
+        cursor = config.oracleCon.cursor()
+        query = "delete from ut_st_storage where  CCUENTA =" + comillas(ccuenta) + " AND IDSESION = " + str(idsesion) + " AND TTAR=" + comillas(ttar)
+        cursor.execute(query)
+        config.oracleCon.commit()
+        cursor.close()
+        _print(0,"Borrado en la bbdd el storage de ",ccuenta)
+        return True
+    except BaseException, error:
+        _print(0,"Error al borrar en la bbdd el storage de ",ccuenta)
+        _print(0,"QUERY: ",query)
+        _print(0,"ERROR: ",error)
+        return False

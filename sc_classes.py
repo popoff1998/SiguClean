@@ -14,6 +14,8 @@ import os
 import datetime
 from progressbar import *
 import pickle
+import tarfile
+from shutil import rmtree
 
 import config
 from sc_funcs import *
@@ -22,13 +24,14 @@ from sc_log   import *
 
 
 #Clases Enum
-state = Enum('NA', 'ARCHIVED', 'DELETED', 'TARFAIL', 'NOACCESIBLE', 'ROLLBACK', 'ERROR', 'DELETEERROR', 'UNARCHIVED',
+state = Enum('NA', 'ARCHIVED', 'DELETED', 'DUMMY', 'MANUALDELETE', 'TARFAIL', 'NOACCESIBLE', 'ROLLBACK', 'ERROR', 'DELETEERROR', 'UNARCHIVED',
              'NOTARCHIVABLE','LINKERROR')
 
 
 class Session(object):
     """Clase para procesar una sesion de archivado"""
-    def __init__(self, session_id, from_date, to_date):
+
+    def __init__(self, session_id, from_date, to_date,parent):
         config.session = self
         self.sessionId = session_id
         self.fromDate = from_date
@@ -45,9 +48,11 @@ class Session(object):
         self.abortInSeverity = config.ABORTINSEVERITY
         self.idsesion = None
         self.logsdir = ''
+        self.parent = parent
 
-        #print globals()
-        #global TARDIR
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
+
         # Comprobamos los parametros para poder ejecutar
         if not self.sessionId:
             raise ValueError
@@ -56,8 +61,6 @@ class Session(object):
         if not self.toDate:
             self.toDate = '2100-01-01'
         # Comprobamos que existe TARDIR
-        print "TARDIR ES: ",config.TARDIR
-        print "WINDOWS_PASS ES:",config.WINDOWS_PASS
         if config.TARDIR is None:
             raise Exception("No ha dado valor a sessiondir")
         # Directorio para los tars
@@ -121,6 +124,8 @@ class Session(object):
 
     def account_list_from_current(self):
         """Lee userlist en base a los usuarios archivados previamente"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
 
         # Comprobamos que no existe ya para sesiones que se hayan creado sin procesar.
         if not self.accountList:
@@ -136,6 +141,8 @@ class Session(object):
 
     def get_session_id(self):
         """Devuelve el ID de la BBDD en base a la descripcion de sesion"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
 
         qgetidsesion = "SELECT IDSESION FROM UT_ST_SESION WHERE DSESION = %s"
 
@@ -152,6 +159,8 @@ class Session(object):
 
     def logdict(self, logs_dirs, pathname):
         from collections import defaultdict
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
 
         tmp_dict = defaultdict(list)
         lineas = 0
@@ -164,6 +173,8 @@ class Session(object):
     def consolidate_logs(self):
         """Consolida los logs de una sesión con múltiples logs
         (En desarrollo) """
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
 
         c_path = self.tardir + "/consolidatelogs"
         if os.path.exists(c_path):
@@ -194,6 +205,8 @@ class Session(object):
 
     def consolidate_fs(self, fs):
         """Consolida un FS de una sesion previa"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
 
         import glob
         cursor = None
@@ -218,8 +231,9 @@ class Session(object):
         # Abrimos el cursor
         try:
             cursor = config.oracleCon.cursor()
-        except BaseException:
+        except BaseException, error:
             _print(0, "ABORT: ConsolidateFs, Error abriendo cursor de oracle")
+            _print(0, "ERROR: ",error)
             os._exit(False)
 
         # Bucle de renombrado
@@ -280,6 +294,9 @@ class Session(object):
     def consolidate(self, fslist):
         """Consolida una sesión. Le pasaremos una lista de los label de los fs a
         procesar"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
+
         # Consolidamos los FS
         if fslist is not None:
             for fs in fslist:
@@ -295,6 +312,9 @@ class Session(object):
         return True
 
     def check_services(self):
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
+
         archives = [s for s in os.listdir(self.tardir) if (not s.startswith("logs") and s != "consolidatelogs")]
         check_services(archives)
 
@@ -304,6 +324,9 @@ class Session(object):
         # de la sesión, quedándome con las líneas que contienen "Archivando <storage>"
         # , extrayendo la cuarta columna y procesando esta para quitarle la primera parte que
         # es la raiz, despues tengo el alternativo (o el natural) y por ultimo el usuario
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
+
         from collections import defaultdict
 
         origindict = defaultdict(str)
@@ -338,6 +361,8 @@ class Session(object):
 
     def abort(self, severity):
         """Funcion que lleva el control sobre el proceso de abortar"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
 
         if config.EXTRADEBUG:
             debug("EXTRADEBUG-INFO: ABORTALWAYS ES: ", config.ABORTALWAYS)
@@ -360,6 +385,8 @@ class Session(object):
 
     def die(self, user, rollback):
         """Funcion que controla si abortamos o no y gestiona los logs"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
 
         if rollback:
             if user.rollback():
@@ -379,12 +406,15 @@ class Session(object):
                 self.log.write_failed(user.cuenta)
         # Generamos y grabamos la razon del fallo
         if not user.failreason:
-            self.log.write_fail_reason(format_reason(user.cuenta, reason.UNKNOWN, "----", self.stats))
+            self.log.write_fail_reason(format_reason(user.cuenta, config.reason.UNKNOWN, "----", self.stats))
         else:
             self.log.write_fail_reason(user.failreason)
         return False
 
     def get_account_list(self):
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
+
         if config.TEST:
             self.accountList = ['games', 'news', 'uucp', 'pepe']
             return True
@@ -392,6 +422,9 @@ class Session(object):
             if config.FROMFILE is not None:
                 # Leo la lista de usuarios de FROMFILE
                 return from_file(self.accountList)
+            elif config.CONSOLIDATE:
+                #Leemos la lista de los ya procesados
+                return self.account_list_from_current()
             else:
                 # Recupero la lista de usuarios de SIGU
                 self.accountList = get_list_by_date(self.toDate, self.fromDate)
@@ -399,6 +432,9 @@ class Session(object):
 
     def bbdd_insert(self):
         """ Inserta un registro de archivado en la BBDD """
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
+
         now = datetime.datetime.now()
         # Distinguimos entre sesiones restoring y normales.
         # Para las normales generamos un nuevo indice.
@@ -413,6 +449,8 @@ class Session(object):
                 values = values_list(self.idsesion, now.strftime('%Y-%m-%d'), self.fromDate,
                                      self.toDate, self.sessionId)
                 query = config.Q_INSERT_SESION % values
+                if config.EXTRADEBUG:
+                    debug("EXTRADEBUG-INFO: (sesion.bbdd-insert) query: ", query)
                 self.log.write_bbdd(query)
                 if config.DRYRUN and not config.SOFTRUN:
                     return True
@@ -439,6 +477,11 @@ class Session(object):
         return True
 
     def start(self):
+        """Función principal para procesar una sesión"""
+
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
+
         # Directorio para TARS
         pbar = None
         if config.DEBUG:
@@ -555,10 +598,14 @@ class Session(object):
                     continue
             self.tarsizes = self.tarsizes + user.tarsizes
             # ... Borramos storage ...
-            if not user.delete_storage():
-                _print(0, "ERROR: Borrando storages de usuario ", user.cuenta)
-                if not self.die(user, True):
-                    continue
+            #Evitamos si el usuario es DUMMY
+            if user.dummy or user.ignore:
+                pass
+            else:
+                if not user.delete_storage():
+                    _print(0, "ERROR: Borrando storages de usuario ", user.cuenta)
+                    if not self.die(user, True):
+                        continue
             # Lo siguiente solo lo hacemos si tiene cuenta windows
             if 'WINDOWS' in user.cuentas and not config.CONSOLIDATE:
                 # Si falla el archivado de DN continuamos pues quiere decir que no está en AD
@@ -577,10 +624,11 @@ class Session(object):
                             user.borra_cuenta_windows()
                             continue
             # Escribimos el registro de usuario archivado
-            if not user.bbdd_insert():
-                _print(0, "ERROR: Insertando storages en BBDD de usuario ", user.cuenta)
-                if not self.die(user, True):
-                    continue
+            if not user.ignore:
+                if not user.bbdd_insert():
+                    _print(0, "ERROR: Insertando storages en BBDD de usuario ", user.cuenta)
+                    if not self.die(user, True):
+                        continue
             # Si hemos llegado aquí esta correcto
             if config.ABORTDECREASE:
                 self.abortCount -= 1
@@ -623,12 +671,19 @@ class Storage(object):
             # Superseed de MANDATORYRELAX
         if config.MANDATORYRELAX == config.Mrelax.TODOS or (config.MANDATORYRELAX == config.Mrelax.CANCELADOS and self.parent.cEstado == config.CANCELADO):
             self.mandatory = False
+        _print(9,"Creado STORAGE: ",self.key," PATH: ",self.path," MANDATORY? ",self.mandatory," MRELAX= ",config.MANDATORYRELAX)
 
     def display(self):
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         _print(1, self.key, "\t = ", self.path, "\t Accesible: ", self.accesible, "\t Estado: ", self.state)
 
     def archive(self, rootpath):
         """ Archiva un storage en un tar"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         # Vuelvo a comprobar aqui que es accesible
         if not self.accesible:
             self.state = state.NOACCESIBLE
@@ -643,7 +698,6 @@ class Storage(object):
                 _f.close()
                 self.tarsize = os.lstat(self.tarpath).st_size
                 self.state = state.ARCHIVED
-                # self.bbdd_insert()
                 return True
             # Cambiamos temporalmente al directorio origen para que el tar sea relativo
             with cd_change(self.path):
@@ -662,8 +716,6 @@ class Storage(object):
                 config.session.log.write_create_done(self.tarpath)
             self.tarsize = os.path.getsize(self.tarpath)
             self.state = state.ARCHIVED
-            # Muevo el almacenamiento en la BBDD al final del proceso del usuario para que sea mas transaccional
-            # self.bbdd_insert()
             return True
         except BaseException, error:
             _print(0, "ERROR: Archivando ", self.key)
@@ -674,10 +726,13 @@ class Storage(object):
 
     def bbdd_insert(self, cursor):
         """ Inserta un registro de archivado en la BBDD """
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         # Solo procesamos si el storage se completo y por tanto esta en estado deleted
         if config.EXTRADEBUG:
             debug("EXTRADEBUG-INFO: (storage-bbdd_insert) self.state: ", self.state, " key: ", self.key)
-        if self.state == state.DELETED:
+        if self.state in (state.DELETED, state.MANUALDELETE, state.DUMMY):
             try:
                 # Como en sigu
                 values = values_list(config.session.idsesion, self.parent.cuenta, self.tarpath, self.tarsize,
@@ -702,6 +757,9 @@ class Storage(object):
 
     def delete(self):
         """Borra un storage"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         # Primero tengo que controlar si no existe y no es mandatory
         if config.DEBUG:
             debug("DEBUG-INFO: (storage.delete) ", self.key, " en ", self.path)
@@ -719,7 +777,15 @@ class Storage(object):
             return True
         except BaseException, error:
             if config.DEBUG:
-                debug("DEBUG_ERROR: Borrando ", self.path, " : ", error)
+                debug("DEBUG-ERROR: Borrando ", self.path, " : ", error)
+            if config.MANUALDELETE:
+                if config.DEBUG:
+                    debug("DEBUG-INFO: MANUALDELETE ",self.path)
+                config.session.log.write_manualdelete(self.path)
+                if self.link is not None:
+                    config.ssesion.log.write_manualdelete(self.link)
+                self.state = state.MANUALDELETE
+                return True
             self.state = state.DELETEERROR
             return False
 
@@ -728,9 +794,12 @@ class Storage(object):
         - Si se ha borrado hacemos un untar
         - Borramos el tar
         - Ponemos el state como rollback"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         if config.EXTRADEBUG:
             debug('EXTRADEBUG-INFO: (storage.rollback)', self.__dict__)
-        if self.state in (state.DELETED, state.DELETEERROR):
+        if self.state in (state.DELETED, state.DELETEERROR, state.MANUALDELETE):
             if not self.unarchive():
                 self.state = state.ERROR
                 return False
@@ -763,6 +832,9 @@ class Storage(object):
 
     def unarchive(self):
         """Des-archiva un storage"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         if self.state in (state.DELETED, state.ARCHIVED, state.DELETEERROR):
             try:
                 _print(1, "Unarchiving ", self.key, " to ", self.path, " from ", self.tarpath, " ... ")
@@ -781,6 +853,9 @@ class Storage(object):
         """Comprueba la accesibilidad de un storage
         se tiene en cuenta que si no existe en el sitio por defecto
         puede existir en los root alternativos"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         # Existe el path
         if config.DEBUG:
             debug("DEBUG-INFO: ****** PROCESANDO ", self.path, " *******")
@@ -831,6 +906,9 @@ class Storage(object):
 
     def accesible_now(self):
         """Comprueba si esta accesible en este momento"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         if os.path.exists(self.path):
             self.accesible = True
             return True
@@ -840,6 +918,9 @@ class Storage(object):
 
     def exist(self):
         """Construye el storage"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         # Buscamos todos los storages para ese FS
         parent_dir = os.path.dirname(self.path)
         basename = os.path.basename(self.path)
@@ -934,141 +1015,6 @@ class User(object):
     # Lo quito a ver que pasa global status
     instancias = {}
 
-    def __new__(cls, name, parent):
-        if name in User.instancias:
-            return User.instancias[name]
-        self = object.__new__(cls)
-        User.instancias[name] = self
-        return self
-
-    def check(self):
-        """Metodo que chequea los storages mandatory del usuario
-        y si el usuario fue previamente archivado o no
-        Asumo que la DN está bien porque acabo de buscarla."""
-
-        # es archivable? Si no tiene todos los servicios a off, aun caducado o cancelado no debemos procesarlo
-        if not config.PROGRESS and config.EXTRADEBUG:
-            print "ESTADO USUARIO: ", self.cEstado
-            print "MRELAX: ", config.MANDATORYRELAX, "TIPO: ", type(config.MANDATORYRELAX)
-            print "CANCELADO ES: ", config.CANCELADO
-            print "mRelax.TODOS: ", config.Mrelax.TODOS
-
-        if not all_services_off(self.cuenta):
-            self.exclude = True
-            if config.DEBUG:
-                debug("DEBUG-WARNING: (user.check) El usuario ", self.cuenta,
-                      " no tiene todos los servicios a off")
-            self.failreason = format_reason(self.cuenta, reason.NOTALLSERVICESOFF, "---", self.parent.stats)
-
-            # Este usuario se va a excluir, pero en una sesion de consolidacion al ser esta comprobacion nueva
-            # hay que tener en cuenta que ya se archivo algo. Se me dice que aunque asi fuera, que solo se marque la
-            # razon de la exclusion y se deje lo demas como esta.   A mi no me convence porque deja flecos, pero bueno.
-
-            return False
-
-        # Esta archivado?
-        archived = is_archived(self.cuenta)
-        # Si la sesion es de consolidacion pasamos del chequeo de si esta archivado o no
-        if not config.CONSOLIDATE:
-            if archived is True:
-                status = False
-                self.failreason = format_reason(self.cuenta, reason.ISARCHIVED, "---", self.parent.stats)
-                if config.DEBUG:
-                    debug("DEBUG-WARNING: (user.check) El usuario ", self.cuenta, " ya estaba archivado")
-                self.exclude = True
-                return status
-            elif archived is None:
-                status = False
-                self.failreason = format_reason(self.cuenta, reason.UNKNOWNARCHIVED, "---", self.parent.stats)
-                if config.DEBUG:
-                    debug("DEBUG-ERROR: (user.check) Error al comprobar estado de archivado de ", self.cuenta)
-                self.exclude = True
-                return status
-            elif archived is not False:
-                status = False
-                self.failreason = format_reason(self.cuenta, reason.NOTARCHIVABLE, "---", archived)
-                if config.DEBUG:
-                    debug("DEBUG-WARNING: (user.check) El usuario ", self.cuenta,
-                          " no es archivable, estado de usuario: ", archived)
-                self.exclude = True
-                return status
-
-        # El usuario no esta archivado, compruebo sus storages
-        status = True
-        for storage in self.storage:
-            # Si es secundario ya esta procesado y pasamos de el.
-            if storage.secondary:
-                continue
-            # Aquí viene la nueva comprobación en función de como tengamos el mandatoryrelax
-            # Si existe o no es mandatory, continuamos
-
-            if not storage.exist() and storage.mandatory:
-                # Si estamos aquí la cuenta es caducada o no hemos relajado el mandatory,
-                # aparte de que el storage no existe y es mandatory, por tanto fallamos
-                status = False
-                self.failreason = format_reason(self.cuenta, reason.NOMANDATORY, storage.key, self.parent.stats)
-                if config.DEBUG:
-                    debug("DEBUG-WARNING: (user.check) El usuario ", self.cuenta, " no ha pasado el chequeo")
-                break
-            else:
-                # Con el nuevo modelo, storage puede tener una lista de mas storages
-                # así que lo proceso
-                if storage.morestoragelist:
-                    for st in storage.morestoragelist:
-                        self.storage.append(st)
-
-        return status
-
-    def bbdd_insert(self):
-        """Archiva en la BBDD todos los storages de usuario archivados"""
-        cursor = config.oracleCon.cursor()
-        for storage in self.storage:
-            ret = storage.bbdd_insert(cursor)
-            if not ret:
-                # Debo hacer un rollback
-                if config.DEBUG:
-                    debug("DEBUG-ERROR: (user-bbdd_insert) Insertando: ", storage.key)
-                config.oracleCon.rollback()
-                cursor.close()
-                self.failreason = format_reason(self.cuenta, reason.INSERTBBDDSTORAGE, storage.key, self.parent.stats)
-                return False
-        # Debo hacer un commit
-        config.oracleCon.commit()
-        cursor.close()
-        return True
-
-    def borra_cuenta_windows(self):
-        # TODO
-        """Borra la cuenta windows de la BBDD sigu
-        Pendiente de implementar"""
-        _ = self
-        return True
-
-    def list_cuentas(self):
-        if config.TRACE:
-            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
-
-        """Devuelve una tupla con las cuentas que tiene el usuario
-        Por defecto tenemos correo y linux, para ver si tenemos windows
-        consultamos si existe en la tabla UT_CUENTAS_NT, en AD o en ambos"""
-
-        if config.TEST:
-            return 'LINUX', 'MAIL'  # dummy return
-
-        if has_cuenta_nt(self.cuenta):
-            return "LINUX", "MAIL", "WINDOWS"
-        else:
-            return "LINUX", "MAIL"
-
-    def estado(self):
-        if config.TRACE:
-            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
-
-        q_cestado = "select cestado from ut_cuentas where ccuenta = %s" % comillas(self.cuenta)
-        cursor = config.oracleCon.cursor()
-        cursor.execute(q_cestado)
-        return fetch_single(cursor)
-
     def __init__(self, cuenta, parent):
         if config.TRACE:
             traceprint(self.__class__.__name__+":"+current_func(),parent.__class__.__name__+":"+current_parent())
@@ -1077,7 +1023,12 @@ class User(object):
             _ = self.cuenta
             if config.DEBUG:
                 debug("DEBUG-WARNING: (user.__init__) YA EXISTIA USUARIO ", self.cuenta, " VUELVO DE INIT")
-            return
+                print "CUENTA: ",self.cuenta
+            #Actualmente comento el siguiente return porque dentro de la shell interactiva no me funciona bien si retorno si inicializar las
+            #variables de nuevo. De hecho con do_storage se me va añadiendo el utimo storage repetido cada vez que llamo al metodo con el mismo
+            #usuario.
+
+            #return
         except:
             pass
         self.parent = parent
@@ -1087,6 +1038,8 @@ class User(object):
         self.failreason = None
         self.cuenta = cuenta
         self.tarsizes = 0
+        self.dummy = False
+        self.ignore = False
 
         # OJO: Aquí relleno el estado consultándolo de sigu usuario a usuario
         # sería más óptimo hacerlo en getlistbydate, pero de momento para no
@@ -1097,7 +1050,7 @@ class User(object):
         # Compruebo si esta explicitamente excluido
 
         if self.cuenta in self.parent.excludeuserslist:
-            self.failreason = reason.EXPLICITEXCLUDED
+            self.failreason = config.reason.EXPLICITEXCLUDED
             self.exclude = True
             return
 
@@ -1107,7 +1060,7 @@ class User(object):
             if config.LDAPRELAX:
                 self.homedir = cuenta
             else:
-                self.failreason = reason.NOTINLDAP
+                self.failreason = config.reason.NOTINLDAP
                 self.exclude = True
                 return
 
@@ -1148,8 +1101,162 @@ class User(object):
         if self.dn:
             status, self.dn, self.adObject, result_type = dn_from_user(self.cuenta)
 
+    """    def __del__(self):
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
+        print "__DEL__ BORRANDO ",self
+    """
+
+    def __new__(cls, name, parent):
+        if config.TRACE:
+            traceprint(cls.__class__.__name__+":"+current_func(),parent.__class__.__name__+":"+current_parent())
+
+        if name in User.instancias:
+            return User.instancias[name]
+        self = object.__new__(cls)
+        User.instancias[name] = self
+        return self
+
+    def check(self):
+        """Metodo que chequea los storages mandatory del usuario
+        y si el usuario fue previamente archivado o no
+        Asumo que la DN está bien porque acabo de buscarla."""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
+        # es archivable? Si no tiene todos los servicios a off, aun caducado o cancelado no debemos procesarlo
+        if not config.PROGRESS and config.EXTRADEBUG:
+            print "ESTADO USUARIO: ", self.cEstado
+            print "MRELAX: ", config.MANDATORYRELAX, "TIPO: ", type(config.MANDATORYRELAX)
+            print "CANCELADO ES: ", config.CANCELADO
+            print "mRelax.TODOS: ", config.Mrelax.TODOS
+
+        if not all_services_off(self.cuenta) and not config.BYPASS:
+            self.exclude = True
+            if config.DEBUG:
+                debug("DEBUG-WARNING: (user.check) El usuario ", self.cuenta,
+                      " no tiene todos los servicios a off")
+            self.failreason = format_reason(self.cuenta, config.reason.NOTALLSERVICESOFF, "---", self.parent.stats)
+
+            # Este usuario se va a excluir, pero en una sesion de consolidacion al ser esta comprobacion nueva
+            # hay que tener en cuenta que ya se archivo algo. Se me dice que aunque asi fuera, que solo se marque la
+            # razon de la exclusion y se deje lo demas como esta.   A mi no me convence porque deja flecos, pero bueno.
+
+            return False
+
+        # Esta archivado?
+        archived = is_archived(self.cuenta)
+        # Si la sesion es de consolidacion pasamos del chequeo de si esta archivado o no
+        if not config.CONSOLIDATE:
+            if archived is True and not config.BYPASS:
+                status = False
+                self.failreason = format_reason(self.cuenta, config.reason.ISARCHIVED, "---", self.parent.stats)
+                if config.DEBUG:
+                    debug("DEBUG-WARNING: (user.check) El usuario ", self.cuenta, " ya estaba archivado")
+                self.exclude = True
+                return status
+            elif archived is None and not config.BYPASS:
+                status = False
+                self.failreason = format_reason(self.cuenta, config.reason.UNKNOWNARCHIVED, "---", self.parent.stats)
+                if config.DEBUG:
+                    debug("DEBUG-ERROR: (user.check) Error al comprobar estado de archivado de ", self.cuenta)
+                self.exclude = True
+                return status
+            elif archived is not False and not config.BYPASS:
+                status = False
+                self.failreason = format_reason(self.cuenta, config.reason.NOTARCHIVABLE, "---", self.parent.stats)
+                if config.DEBUG:
+                    debug("DEBUG-WARNING: (user.check) El usuario ", self.cuenta,
+                          " no es archivable, estado de usuario: ", archived)
+                self.exclude = True
+                return status
+
+        # El usuario no esta archivado, compruebo sus storages
+        status = True
+        for storage in self.storage:
+            # Si es secundario ya esta procesado y pasamos de el.
+            if storage.secondary:
+                continue
+            # Aquí viene la nueva comprobación en función de como tengamos el mandatoryrelax
+            # Si existe o no es mandatory, continuamos
+            if not storage.exist() and storage.mandatory:
+                # Si estamos aquí la cuenta es caducada o no hemos relajado el mandatory,
+                # aparte de que el storage no existe y es mandatory, por tanto fallamos
+                status = False
+                self.failreason = format_reason(self.cuenta, config.reason.NOMANDATORY, storage.key, self.parent.stats)
+                if config.DEBUG:
+                    debug("DEBUG-WARNING: (user.check) El usuario ", self.cuenta, " no ha pasado el chequeo")
+                break
+            else:
+                # Con el nuevo modelo, storage puede tener una lista de mas storages
+                # así que lo proceso
+                if storage.morestoragelist:
+                    for st in storage.morestoragelist:
+                        self.storage.append(st)
+
+        return status
+
+    def bbdd_insert(self):
+        """Archiva en la BBDD todos los storages de usuario archivados"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
+        cursor = config.oracleCon.cursor()
+        for storage in self.storage:
+            ret = storage.bbdd_insert(cursor)
+            if not ret:
+                # Debo hacer un rollback
+                if config.DEBUG:
+                    debug("DEBUG-ERROR: (user-bbdd_insert) Insertando: ", storage.key)
+                config.oracleCon.rollback()
+                cursor.close()
+                self.failreason = format_reason(self.cuenta, config.reason.INSERTBBDDSTORAGE, storage.key, self.parent.stats)
+                return False
+        # Debo hacer un commit
+        config.oracleCon.commit()
+        cursor.close()
+        return True
+
+    def borra_cuenta_windows(self):
+        # TODO
+        """Borra la cuenta windows de la BBDD sigu
+        Pendiente de implementar"""
+        _ = self
+        return True
+
+    def list_cuentas(self):
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
+        """Devuelve una tupla con las cuentas que tiene el usuario
+        Por defecto tenemos correo y linux, para ver si tenemos windows
+        consultamos si existe en la tabla UT_CUENTAS_NT, en AD o en ambos"""
+
+        if config.TEST:
+            return 'LINUX', 'MAIL'  # dummy return
+
+        if has_cuenta_nt(self.cuenta):
+            return "LINUX", "MAIL", "WINDOWS"
+        else:
+            return "LINUX", "MAIL"
+
+    def estado(self):
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
+        q_cestado = "select cestado from ut_cuentas where ccuenta = %s" % comillas(self.cuenta)
+        cursor = config.oracleCon.cursor()
+        cursor.execute(q_cestado)
+        ret = fetch_single(cursor)
+        cursor.close()
+        return ret
+
+
     def delete_storage(self):
         """Borra todos los storages del usuario"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
 
         for storage in self.storage:
             if storage.delete():
@@ -1157,15 +1264,21 @@ class User(object):
             else:
                 if config.DEBUG:
                     debug("DEBUG-ERROR: (user.delete_storage) user:", self.cuenta, " Storage: ", storage.key)
-                self.failreason = format_reason(self.cuenta, reason.FAILDELETE, storage.key, self.parent.stats)
+                self.failreason = format_reason(self.cuenta, config.reason.FAILDELETE, storage.key, self.parent.stats)
                 return False
         return True
 
     def show_storage(self):
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         for storage in self.storage:
             storage.display()
 
     def show(self):
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         _print(1, 'Cuenta\t=\t', self.cuenta)
         _print(1, 'DN\t=\t', self.dn)
         self.show_storage()
@@ -1174,7 +1287,10 @@ class User(object):
         """Metodo para hacer rollback de lo archivado
         El rollback consiste en:
             - Recuperar de los tars los storages borrados
-            - Borrar los tars"""
+            - Borrar los tars
+        """
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
 
         _print(2, "*** ROLLBACK INIT *** ", self.cuenta)
         for storage in self.storage:
@@ -1182,7 +1298,9 @@ class User(object):
                 return False
         # Si llegamos aquí, borramos el directorio padre
         try:
-            rmtree(self.rootpath)
+            #Precaución adicional si dryrun o softrun. En estos casos no hace falta desarchivar
+            if not config.DRYRUN:
+                rmtree(self.rootpath)
         except BaseException, error:
             _print(0, "ABORT: Error borrando rootpath: ", self.rootpath, " error: ", error)
             os._exit(False)
@@ -1190,6 +1308,9 @@ class User(object):
         return True
 
     def get_root_path(self, tardir):
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         if not os.path.isdir(tardir):
             _print(0, "ABORT: (user-archive) No existe el directorio para TARS", tardir)
             os._exit(False)
@@ -1200,6 +1321,9 @@ class User(object):
 
     def unarchive(self, tardir):
         """Este metodo es useless pues debe rellenar los storages primero"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         # Vemos si rootpath existe
         if not self.rootpath:
             self.get_root_path(tardir)
@@ -1209,6 +1333,8 @@ class User(object):
 
     def archive(self, tardir):
         """Metodo que archiva todos los storages del usuario"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
 
         self.tarsizes = 0
         storage = None
@@ -1217,11 +1343,30 @@ class User(object):
         if not self.rootpath:
             self.get_root_path(tardir)
 
+        #Comprobamos si no tiene ningún accesible storage con lo que creamos un dummy y Salimos. OJO en sesiones CONSOLIDATE lo excluimos
+        #El estado lo ponemos directamente a DELETED
+        if self.accesible_storages() == 0:
+            if not config.CONSOLIDATE:
+                if config.DEBUG:
+                    debug("DEBUG-WARNING: (user.archive) ",self.cuenta," no tiene storages accesibles. Creando dummy")
+                storage = Storage("dummy", "dummy", False, False, self)
+                storage.state = state.DUMMY
+                storage.tarpath = "dummy@"+self.parent.sessionId
+                self.storage.append(storage)
+                self.dummy = True
+                _print(2, 'INFO: El tamaño de los tars para ', self.cuenta, ' es: DUMMY')
+                return True
+            else:
+                if config.DEBUG:
+                    debug("DEBUG-INFO: (user.archive) ",self.cuenta," no tiene storages pero estamos en consolidacion, no hacemos nada")
+                self.ignore = True
+                return True
+        #Es un usuario con storages, seguimos procesando
         for storage in self.storage:
             if not storage.archive(self.rootpath) and storage.mandatory:
                 if config.DEBUG:
                     debug("DEBUG-INFO: (user.archive) mandatory de ", storage.key, " es ", storage.mandatory)
-                self.failreason = format_reason(self.cuenta, reason.FAILARCHIVE, storage.key, self.parent.stats)
+                self.failreason = format_reason(self.cuenta, config.reason.FAILARCHIVE, storage.key, self.parent.stats)
                 ret = False
                 break
             else:
@@ -1240,12 +1385,14 @@ class User(object):
 
     def archive_dn(self, tardir):
         """Usando pickle archiva el objeto DN de AD"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
 
         # Vemos si rootpath existe
         if not self.rootpath:
             self.get_root_path(tardir)
         if not self.adObject:
-            self.failreason = format_reason(self.cuenta, reason.NODNINAD, "---", self.parent.stats)
+            self.failreason = format_reason(self.cuenta, config.reason.NODNINAD, "---", self.parent.stats)
             return False
         try:
             ad_file = open(self.rootpath + '/' + self.cuenta + '.dn', 'w')
@@ -1253,18 +1400,20 @@ class User(object):
             ad_file.close()
             return True
         except BaseException, error:
-            self.failreason = format_reason(self.cuenta, reason.FAILARCHIVEDN, self.dn, self.parent.stats)
+            self.failreason = format_reason(self.cuenta, config.reason.FAILARCHIVEDN, self.dn, self.parent.stats)
             debug("DEBUG-INFO: (archive_dn) error ",error)
             return False
 
     def delete_dn(self):
         """Borra el dn del usuario"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
 
         # Dependiendo del tiempo transcurrido en el archivado, puede haberse superado
         # el timeout de la conexión y haberse cerrado. En este caso se presentará la
         # excepción ldap.SERVER_DOWN. Deberemos reabrir la conexión y reintentar el borrado
 
-        # import ldap
+        import ldap
         _print(1, 'Borrando DN: ', self.dn)
 
         if self.dn is not None:
@@ -1282,14 +1431,17 @@ class User(object):
                         return True
                     except ldap.LDAPError, error:
                         _print(0, "Error borrando DN usuario despues de reconexion ", self.cuenta, " ", error)
-                        self.failreason = format_reason(self.cuenta, reason.FAILDELETEDN, self.dn, self.parent.stats)
+                        self.failreason = format_reason(self.cuenta, config.reason.FAILDELETEDN, self.dn, self.parent.stats)
             except ldap.LDAPError, error:
                 _print(0, "Error borrando DN usuario ", self.cuenta, " ", error)
-                self.failreason = format_reason(self.cuenta, reason.FAILDELETEDN, self.dn, self.parent.stats)
+                self.failreason = format_reason(self.cuenta, config.reason.FAILDELETEDN, self.dn, self.parent.stats)
             return False
 
     def insert_dn(self, tardir):
         """Como no es posible recuperar el SID no tiene sentido usarla"""
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         import ldap
 
         if not self.rootpath:
@@ -1325,6 +1477,9 @@ class User(object):
                 return False
 
     def accesible_storages(self):
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         i=0
         for _storage in self.storage:
             if _storage.accesible_now():
@@ -1332,6 +1487,9 @@ class User(object):
         return i
 
     def get_storage_list(self):
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
         #devuelve una lista de strings con los storages
         storage_list = []
         for _storage in self.storage:

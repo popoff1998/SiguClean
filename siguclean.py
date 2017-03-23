@@ -16,7 +16,6 @@ from pprint import pprint
 import pickle
 #import re
 import collections
-import subprocess
 
 from enum import Enum
 import dateutil.parser
@@ -26,6 +25,7 @@ import readline
 """
 import sys
 import os
+import subprocess
 
 import config
 from sc_shell import Shell
@@ -93,7 +93,11 @@ parser.add_argument('--ldap-relax', help='No tiene en cuenta si el usuario está
                     action='store_true')
 parser.add_argument('--check-archived-data', help='Chequea que el usuario efectivamente tiene archivados aunque sigu diga que está archivado', dest='CHECKARCHIVEDDATA',
                     action='store_true')
-parser.add_argument('--trace', help='Imprime información de trazado', dest='TRACE',action='store_true')                    
+parser.add_argument('--delete-relax', help='No falla el usuario si no es capaz de borrar determinado storage, en su lugar pone el path en storages.manualdelete para borrarlos mas tarde', dest='MANUALDELETE',
+                    action='store_true')
+parser.add_argument('--trace', help='Imprime información de trazado', dest='TRACE',action='store_true')
+parser.add_argument('--consolidate-only-fs',help='Solo consolida los fs especificados',dest='CONSOLIDATELIST',nargs='+', choices=('homenfs', 'homecif', 'homemail', 'perfiles'))
+parser.add_argument('--consolidate-pass1',help='Ejecuta el pass1 y pass2 de consolidación, si no solo el pass2',dest='CONSOLIDATEPASS1',action='store_true')
 args = parser.parse_args()
 
 _ = config.VERBOSE
@@ -102,6 +106,7 @@ config.VERBOSE = args.verbosity
 # debug pues aun no hemos establecido la rotación de logs
 
 #Leemos primero si está la opción debug
+
 if args.DEBUG:
     config.DEBUG = True
 if args.RESTORE:
@@ -111,7 +116,7 @@ if args.RESTORE:
 if config.DEBUG and not config.RESTORE:
     debug('verbose es: ', config.VERBOSE)
 
-# Si no es interactiva ponemos los valores a las globales
+# Si no es interactiva ponemos los valores a config
 
 for var in args.__dict__:
     if var in config.__dict__:
@@ -129,6 +134,10 @@ if args.version:
     print __version__
     os._exit(True)
 
+if config.SOFTRUN and not config.DRYRUN:
+    debug("DEBUG-INFO: Forzamos DRYRUN al estar SOFTRUN")
+    config.DRYRUN = True
+
 if config.DEBUG and not config.RESTORE and not config.CONSOLIDATE:
     debug('DEBUG-INFO: SessionId: ', config.sessionId, ' Fromdate: ', config.fromDate,
           ' toDate: ', config.toDate, ' Abortalways: ', config.ABORTALWAYS, ' Verbose ',
@@ -137,18 +146,13 @@ if config.DEBUG and not config.RESTORE and not config.CONSOLIDATE:
 cmdline = sys.argv
 cmdlinestr = ' '.join(cmdline)
 sesion = None
-#################TONIN############
-print "1TARDIR ES:",config.TARDIR
-##################################
+
 try:
-    sesion = Session(config.sessionId, config.fromDate, config.toDate)
+    sesion = Session(config.sessionId, config.fromDate, config.toDate,"MAIN")
 except BaseException, e:
     _print(0, 'ABORT: Error en la creación de la sesion')
     _print(0, "ERROR: ", e)
     os._exit(False)
-#################TONIN############
-print "TARDIR ES:",config.TARDIR
-##################################
 # Guardamos los argumentos
 # Si no es una sesión restore salvamos el string
 if not config.RESTORE:
@@ -189,14 +193,21 @@ else:
         os._exit(False)
     if config.DEBUG:
         debug("DEBUG-INFO: Idsession es ", sesion.idsesion)
-    # Generamos la lista de usuarios a partir de los ya archivados
-    if not sesion.account_list_from_current():
+    # Generamos la lista de usuarios a partir de fromfile, o archivados al estar en consolidacion
+    if not sesion.get_account_list():
         os._exit(False)
     if config.DEBUG:
-        debug("DEBUG-INFO: Recuperada lista usuarios desde FS. Numero usuarios: ", len(sesion.userList))
-    sesion.consolidate_fs('homenfs')
-    sesion.consolidate_fs('homemail')
-    sesion.consolidate_fs('perfiles')
-    sesion.consolidate_fs('homecifs')
+        debug("DEBUG-INFO: Recuperada lista usuarios desde FS. Numero usuarios: ", len(sesion.accountList))
+
+    #PASO 1 de CONSOLIDACION: Solo lo invocamos si expresemante lo seleccionamos --consolidate-pass1
+    if args.CONSOLIDATEPASS1:
+        if not args.CONSOLIDATELIST:
+            sesion.consolidate_fs('homenfs')
+            sesion.consolidate_fs('homemail')
+            sesion.consolidate_fs('perfiles')
+            sesion.consolidate_fs('homecifs')
+        else:
+            sesion.consolidate(args.CONSOLIDATELIST)
+    #PASO 2 de CONSOLIDACION
     sesion.start()
 os._exit(True)
