@@ -591,18 +591,30 @@ class Shell(cmd.Cmd):
         """
         Muestra información de archivado del usuario.
 
-        arcinfo -s <usuario> [sesion]
+        arcinfo -s -i <usuario> [sesion]
 
-        Si no se especifica la sesión se muestran todas las sesiones
+        Si no se especifica -s y la sesión se muestran todas las sesiones.
+        La opción -i muestra solo las sesiones en las que tiene archivados.
         """
         from texttable import Texttable
 
-        args,items = self.parse_with_args(line,'-s',LIST)
+        args,items = self.parse_with_args(line,['-s','-i'],LIST)
 
         if not items:
             print "Se esperaba al menos un argumento"
             return False
         user = items[0]
+
+        if '-i' in args:
+            rows = get_sessions_by_user(user)
+            table = Texttable()
+            table.add_row(["IDSESION", "DSESION"])
+            for row in rows:
+                table.add_row([row[0], row[1]])
+            print table.draw()
+            return
+
+
         try:
             sesion = items[1]
             trailquery = " AND idsesion = " + sesion
@@ -751,12 +763,13 @@ class Shell(cmd.Cmd):
         from collections import defaultdict
 
         _f = None
+        ex_dirs = '0_althome'
         check_environment()
         dictdir = defaultdict(list)
         sumuserlist = 0
         parentdir = line + "/"
         altdirs = [s for s in os.listdir(parentdir)
-                   if s.startswith(config.ALTROOTPREFIX)]
+                   if s.startswith(config.ALTROOTPREFIX) and not s.startswith(ex_dirs) ]
 
         for altdir in altdirs:
             userlist = os.listdir(parentdir + altdir)
@@ -774,7 +787,7 @@ class Shell(cmd.Cmd):
                 _f = fs
 
             _f.write(k)
-            if has_archived_data(k):
+            if is_archived(k) == True:
                 _f.write("\t" + "_ARC_")
             else:
                 _f.write("\t" + "NOARC")
@@ -786,6 +799,82 @@ class Shell(cmd.Cmd):
         fs.close()
         print "LENDICT: ", len(dictdir)
         print "SUMLIST: ", sumuserlist
+
+    @staticmethod
+    def do_checkaltusers(line):
+        """Chequea y ofrece estadisticas de usuarios con carpetas en directorios alt para un directorio raiz dado
+
+        checkaltusers [-f tofile ] [-x directorio] <directorio>
+        """
+
+        fnosigunoldap = open("/tmp/ckaltusers_nosigunoldap","w")
+        fnosigusildap = open("/tmp/ckaltusers_nosigusildap","w")
+        fnoldap = open("/tmp/ckaltusers_noldap","w")
+        farchivados = open("/tmp/ckaltusers_archivados","w")
+        fexpirados = open("/tmp/ckaltusers_expirados","w")
+
+        archived = 0
+        expired = 0
+        nosigunoldap = 0
+        nosigusildap = 0
+        noldap = 0
+
+        ex_dirs = '0_althome'
+        alluserlist = []
+        _f = None
+        check_environment()
+        sumuserlist = 0
+        parentdir = line + "/"
+        altdirs = [s for s in os.listdir(parentdir)
+                   if s.startswith(config.ALTROOTPREFIX) and not s.startswith(ex_dirs) ]
+
+        for altdir in altdirs:
+            #recupero la lista de usuarios
+            userlist = os.listdir(parentdir + altdir)
+            print "ALTDIR: ",altdir," LALL: ",len(alluserlist)," LUSR: ",len(userlist)
+            alluserlist = list(set(alluserlist) | set(userlist))
+
+        print "LEN ALLUSERLIST: ", len(alluserlist)
+
+        for user in alluserlist:
+            #Tiene cuenta en sigu o no?
+            if not has_cuenta_sigu(user):
+                if has_cuenta_ldap(user):
+                    nosigusildap = nosigusildap + 1
+                    print "NOSIGUSILDAP: ",user
+                    fnosigusildap.write(user+"\n")
+                    continue
+                else:
+                    nosigunoldap = nosigunoldap + 1
+                    fnosigunoldap.write(user+"\n")
+                    print "NOSIGUNOLDAP: ",user
+                    continue
+            #Tiene cuenta en ldap o no?
+            if not has_cuenta_ldap(user):
+                noldap = noldap + 1
+                fnoldap.write(user+"\n")
+                print "NOLDAP: ",user
+                continue
+            #Fue archivado previamente?
+            if is_archived(user) == True:
+                archived = archived + 1
+                farchivados.write(user+"\n")
+                print "ARCHIVED: ", user
+                continue
+            #Está expirado pero no se ha archivado?
+            if is_expired(user):
+                expired = expired + 1
+                fexpirados.write(user+"\n")
+                print "EXPIRED: ",user
+
+
+        print "TOTAL: ",len(alluserlist)," NOSIGUNOLDAP: ",nosigunoldap,"NOSIGUSILDAP: ",nosigusildap," NOLDAP: ",noldap," ARCHIVADOS: ",archived," EXPIRADOS: ",expired
+
+        fnosigunoldap.close()
+        fnosigusildap.close()
+        fnoldap.close()
+        farchivados.close()
+        fexpirados.close()
 
     @staticmethod
     def do_quit(line):

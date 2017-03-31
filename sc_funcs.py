@@ -16,6 +16,7 @@ from pprint import pprint
 import dateutil.parser
 import collections
 import tarfile
+from tenacity import *
 
 
 import config
@@ -455,7 +456,7 @@ def dn_from_user(user):
         _status = False
     return _status, dn, tupla, result_type
 
-
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 def ldap_from_sigu(cuenta, attr):
     """Consulta un atributo ldap mediante sigu"""
     if config.TRACE:
@@ -475,10 +476,15 @@ def ldap_from_sigu(cuenta, attr):
 
     q_ldap_sigu = 'select uf_leeldap(' + comillas(cuenta) + ',' + comillas(attr) + ') from dual'
 
-    cursor = config.oracleCon.cursor()
-    cursor.execute(q_ldap_sigu)
-    tmp_list = cursor.fetchall()
-    cursor.close()
+    try:
+        cursor = config.oracleCon.cursor()
+        cursor.execute(q_ldap_sigu)
+        tmp_list = cursor.fetchall()
+        cursor.close()
+    except BaseException, error:
+        print "ERROR: en ldap_from_sigu (1)"
+        raise Exception("Retry")
+        return False
     tmp_list = tmp_list[0][0]
     if config.EXTRADEBUG:
         if tmp_list:
@@ -487,13 +493,18 @@ def ldap_from_sigu(cuenta, attr):
         return tmp_list.strip().split(':')[1].strip()
     # Hacemos la comprobacion en people-deleted
     q_ldap_sigu = 'select uf_leeldap(' + comillas(cuenta) + ',' + comillas(attr) + ',' + comillas('B') + ') from dual'
-    cursor = config.oracleCon.cursor()
-    cursor.execute(q_ldap_sigu)
-    tmp_list = cursor.fetchall()
+    try:
+        cursor = config.oracleCon.cursor()
+        cursor.execute(q_ldap_sigu)
+        tmp_list = cursor.fetchall()
+        cursor.close()
+    except BaseException, error:
+        print "ERROR: en ldap_from_sigu (2)"
+        raise Exception("Retry")
+        return False
     tmp_list = tmp_list[0][0]
     if config.EXTRADEBUG:
         debug("DEBUG-INFO (ldapFromSigu2): ", cuenta, " tmp_list = ", tmp_list)
-    cursor.close()
     return tmp_list.strip().split(':')[1].strip() if tmp_list else None
 
 
@@ -547,7 +558,8 @@ def all_services_off(user):
     if services is None:
         return False
     else:
-        if not ldap_from_sigu(user,'uid'):
+        ret = ldap_from_sigu(user,'uid')
+        if  ret is None:
             if config.DEBUG:
                 debug("El usuario ",user," no existe en ldap")
             #El usuario no existe en LDAP
@@ -1046,3 +1058,39 @@ def delete_bbdd_storage(idsesion, ccuenta, ttar):
         _print(0,"QUERY: ",query)
         _print(0,"ERROR: ",error)
         return False
+
+def get_sessions_by_user(user):
+    """Devuelve las sesiones en las que un usuario tiene archivados"""
+
+    check_environment()
+
+    cursor = config.oracleCon.cursor()
+    query = "select DISTINCT a.idsesion,b.dsesion from ut_st_storage A, ut_st_sesion B where ccuenta= " + comillas(user) + " and a.idsesion=b.idsesion"
+    cursor.execute(query)
+    rows = cursor.fetchall()
+
+    return rows
+
+def has_cuenta_sigu(user):
+    """Comprueba si un usuario tiene cuenta en sigu"""
+
+    check_environment()
+
+    cursor = config.oracleCon.cursor()
+    query = "select ccuenta from ut_cuentas where ccuenta =" + comillas(user)
+    cursor.execute(query)
+    row = fetch_single(cursor)
+
+    if row:
+        return row
+    else:
+        return False
+
+def has_cuenta_ldap(user):
+    """Comprueba si un usuario tiene cuenta en ldap"""
+
+    ret=ldap_from_sigu(user,'uid')
+    if  ret is None:
+        return False
+    else:
+        return ret
