@@ -1,7 +1,41 @@
 SiguClean
 =========
 
-SiguClean es una utilidad para archivar los espacios de almacenamiento asociados a una cuenta de usuario de sigu. 
+SiguClean es una utilidad para archivar los espacios de almacenamiento asociados a una cuenta de usuario de sigu.
+
+Novedades 1.1
+-------------
+####General
+* Reescritura del código de forma modular (sc_funcs, sc_classes, sc_shell, sc_log, config, etc.)
+####Nuevas opciones
+* Nueva opción --check-archived-data.
+* Nueva opción --trace para trazar la ejecución.
+* Nueva opción --consolidate-only-fs para consolidar solo los FS especificados.
+* Nueva opción --consolidate-pass1 para forzar el paso 1 de consolidación o no.
+* Nueva opción --delete-relax para permitir archivado con borrado manual posterior.
+####Fixs
+* Correcciones de integridad en el módulo de rollback.
+* Función ldap_from_sigu resilente.
+* Correccciones en la consolidación.
+* Cambio en la función UF_ST_ULTIMA que ahora funciona también con cuentas no personales, aparte de tener bugs corregidos.
+* Ya se distingue en la comprobación de servicios que el usuario realmente no exista en ldap.
+####Features
+* Integración de fromfile en sesiones de consolidación.
+* Introducción de clave en modo seguro.
+* Forzado de DRYRUN al estar en SOFTRUN.
+####Nuevos comandos
+* Comando fromfile para especificar lista de usuarios en interactivo
+* Comando tofile para especificar fichero de salida en interactivo
+* Comando historia para mostrar el historial de una cuenta
+* Comando servicesoff para mostrar si un usuario tiene todos los servicios a off
+* Comando unarchive para desarchivar a un usuario
+* Comando cuenta para mostrar la cuenta de sigu
+* Comando checktrash para chequear restos de archivados no borrados
+* Comando storages para mostrar los storages de un usuario
+* Comando checkaltusers que ofrece estadísticas de usuarios con carpetas en directorios alternativos
+####Comandos remodelados
+* Comandos stats y arcinfo adaptados a multi sesión
+* Muchos comandos ahora admiten opciones
 
 Conceptos Clave
 ---------------
@@ -18,7 +52,7 @@ Conceptos Clave
 * **mandatory:**
     Atributo de un storage que ocasiona que en caso de fallar su archivado, se considere que el archivado global del usuario ha fallado.
 
-* **rollback:** 
+* **rollback:**
     Proceso que deshace los cambios realizados durante el archivado de un usuario. Su objetivo es dejar todo lo relativo a dicho usuario como si no hubiera sido procesado en dicha sesión.
 
 * **sesiondir:**
@@ -37,7 +71,7 @@ SiguClean puede funcionar de forma interactiva ofreciendo una shell con unos poc
 La base de siguclean es que sea robusto. Para ello sigue varias máximas:
 
 * Las operaciones con usuarios son transaccionales. Si fallan los archivados mandatory u operaciones que no deben fallar, se realiza un rollback sobre el mismo para que quede en disposición de ser archivado más adelante cuando se corrija el problema.
-* Las condiciones de abortado del programa son muy estrictas, abortando solo cuando el problema impide procesar ningún usuario, o cuando los fallos se van acumulando y superan cierto límite. 
+* Las condiciones de abortado del programa son muy estrictas, abortando solo cuando el problema impide procesar ningún usuario, o cuando los fallos se van acumulando y superan cierto límite.
 * Se deja información categorizada del problema que ha hecho que cada usuario falle. Aparte activando la opción de debug o niveles de verbose más altos, se dispone de suficiente información para depurar el proceso.
 * La mayoría de los bloques de código donde se pueden presentar errores inesperados, se encuentran en bloques try-except para interceptar dichos errores.
 
@@ -133,7 +167,7 @@ En siguclean podemos realizar varias selecciones que afectan al proceso del prog
 
 **--fromfile** < fichero >: En lugar de consultar los usuarios en sigu, se usan los del fichero especificado donde cada usuario va en una línea distinta. Es útil cuando se quiere volver a lanzar el procedimiento solo con los usuarios de cualquiera de los ficheros resultado que contenga usuarios que han fallado.
 
-**--exclude-userfile** < fichero >: Lo contrario de lo anterior. Especifica un fichero con un conjunto de usuarios que aún estando en la selección serán excluidos del procesamiento. 
+**--exclude-userfile** < fichero >: Lo contrario de lo anterior. Especifica un fichero con un conjunto de usuarios que aún estando en la selección serán excluidos del procesamiento.
 
 **--ignore-archived**: Excluye directamente de la selección de sigu o del fichero de usuarios aquellos que ya están archivados para que no aparezcan como excluidos. Muy útil si se lanza un archivado para un rango de fechas que previamente fue procesado con el objeto de procesar solo los que tuvieron problemas y ya se han corregido.
 
@@ -145,7 +179,7 @@ Los orígenes de storages son los lugares del sistema de ficheros en los que esp
               {'account':'MAIL','fs':'homemail','label':'MAIL','mandatory':True,'val':''},  
               {'account':'WINDOWS','fs':'perfiles','label':'PERFILES','mandatory':False,'val':''},  
               {'account':'WINDOWS','fs':'homecifs','label':'HOMESCIF','mandatory':True,'val':''})`
-              
+
 Los campos de la misma son:
 
 * **account**:  Tipo de cuenta para el que tiene sentido dicha entrada. Si el usuario tiene cuenta de ese tipo, se usará, si no, no.
@@ -404,7 +438,7 @@ u52momia        NOARC   0_MOVIDOS_INACTIVOS_20100426    0_MAIL_MOVIDO_20080313
 
 ```
 
-Nos dice el usuario, si está archivado o no y la lista de ubicaciones alternativas donde tiene ficheros. Es útil para saber como va el estado de limpia de los directorios alternativos. Llegará un momento en que no sea necesario ejecutarla cuando todos los directorios alternativos hayan sido vaciados. 
+Nos dice el usuario, si está archivado o no y la lista de ubicaciones alternativas donde tiene ficheros. Es útil para saber como va el estado de limpia de los directorios alternativos. Llegará un momento en que no sea necesario ejecutarla cuando todos los directorios alternativos hayan sido vaciados.
 
 El comando da unas estadísticas al final como estas:
 
@@ -529,10 +563,3 @@ siguclean -sigu-password XXXXXX --win-password YYYYYY -f 1900-01-01 -t 2012-12-3
 Esta sesión intentará archivar todos los usuarios que fallaron anteriormente con el mayor nivel de relajación hasta final de 2012. Si aparte hemos arreglado las inconsistencias de los usuarios que fallaron en sigu, es muy posible que podamos archivar el 100% de los usuarios en dicho periodo.
 
 ¿Porqué entonces no usamos niveles de relajación altos desde el primer momento? Pues porque una sesión de archivado puede durar muchas horas y en ese tiempo pueden pasar muchas cosas (que el servidor nfs se caiga, que se desmonte una ubicación, etc). La máxima tiene que ser que un usuario **se archive completamente o no se archive**. Por tanto para grandes selecciones de usuario evitaremos en la medida de lo posible relajar el chequeo. Para sesiones "escoba" que procesarán proporcionalmente pocos usuarios si las podremos usar.
-
-
-
-
-
-
- 
