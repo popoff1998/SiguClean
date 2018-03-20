@@ -5,25 +5,25 @@ SiguClean es una utilidad para archivar los espacios de almacenamiento asociados
 
 Novedades 1.1
 -------------
-####General
+#### General
 * Reescritura del código de forma modular (sc_funcs, sc_classes, sc_shell, sc_log, config, etc.)
-####Nuevas opciones
+#### Nuevas opciones
 * Nueva opción --check-archived-data.
 * Nueva opción --trace para trazar la ejecución.
 * Nueva opción --consolidate-only-fs para consolidar solo los FS especificados.
 * Nueva opción --consolidate-pass1 para forzar el paso 1 de consolidación o no.
 * Nueva opción --delete-relax para permitir archivado con borrado manual posterior.
-####Fixs
+#### Fixs
 * Correcciones de integridad en el módulo de rollback.
 * Función ldap_from_sigu resilente.
 * Correccciones en la consolidación.
 * Cambio en la función UF_ST_ULTIMA que ahora funciona también con cuentas no personales, aparte de tener bugs corregidos.
 * Ya se distingue en la comprobación de servicios que el usuario realmente no exista en ldap.
-####Features
+#### Features
 * Integración de fromfile en sesiones de consolidación.
 * Introducción de clave en modo seguro.
 * Forzado de DRYRUN al estar en SOFTRUN.
-####Nuevos comandos
+#### Nuevos comandos
 * Comando fromfile para especificar lista de usuarios en interactivo
 * Comando tofile para especificar fichero de salida en interactivo
 * Comando historia para mostrar el historial de una cuenta
@@ -33,7 +33,7 @@ Novedades 1.1
 * Comando checktrash para chequear restos de archivados no borrados
 * Comando storages para mostrar los storages de un usuario
 * Comando checkaltusers que ofrece estadísticas de usuarios con carpetas en directorios alternativos
-####Comandos remodelados
+#### Comandos remodelados
 * Comandos stats y arcinfo adaptados a multi sesión
 * Muchos comandos ahora admiten opciones
 
