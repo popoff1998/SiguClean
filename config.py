@@ -49,7 +49,7 @@ class Status(object):
         exec("self.%s = %s" % (field,val))
 
 # Defines (globales)
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 TEST = False
 ONESHOT = False
