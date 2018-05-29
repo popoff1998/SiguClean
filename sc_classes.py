@@ -49,6 +49,7 @@ class Session(object):
         self.idsesion = None
         self.logsdir = ''
         self.parent = parent
+        self.pbar = None
 
         if config.TRACE:
             traceprint(self.__class__.__name__+":"+current_func(),self.parent+":"+current_parent())
@@ -490,6 +491,7 @@ class Session(object):
         if have_progress():
             pbar = ProgressBar(widgets=[Percentage(), " ", Bar(marker=RotatingMarker()), " ", ETA()],
                                maxval=1000000).start()
+            self.pbar = pbar
         if not config.CONSOLIDATE:
             # Creo la lista de cuentas
             if not self.accountList:
@@ -713,6 +715,8 @@ class Storage(object):
                 self.files = len(members)
                 # Fin del calculo
                 tar.close()
+                if have_progress():
+                    self.parent.parent.pbar.update(self.parent.parent.pbar.currval)
                 config.session.log.write_create_done(self.tarpath)
             self.tarsize = os.path.getsize(self.tarpath)
             self.state = state.ARCHIVED
@@ -1206,6 +1210,7 @@ class User(object):
         for storage in self.storage:
             ret = storage.bbdd_insert(cursor)
             if not ret:
+                # TODO: si voy a volver tengo que procesar el resto para al menos almacenar los INSERT en bbddlog.
                 # Debo hacer un rollback
                 if config.DEBUG:
                     debug("DEBUG-ERROR: (user-bbdd_insert) Insertando: ", storage.key)
