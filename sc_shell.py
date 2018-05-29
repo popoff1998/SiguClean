@@ -763,7 +763,7 @@ class Shell(cmd.Cmd):
         from collections import defaultdict
 
         _f = None
-        ex_dirs = '0_althome'
+        ex_dirs = ('0_ALTHOME','0_UNITYMAIL')
         check_environment()
         dictdir = defaultdict(list)
         sumuserlist = 0
