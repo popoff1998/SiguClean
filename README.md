@@ -3,7 +3,7 @@ SiguClean
 
 SiguClean es una utilidad para archivar los espacios de almacenamiento asociados a una cuenta de usuario de sigu.
 
-Novedades 1.2
+Novedades 1.1.2
 -------------
 
 #### General
