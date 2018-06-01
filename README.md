@@ -3,6 +3,24 @@ SiguClean
 
 SiguClean es una utilidad para archivar los espacios de almacenamiento asociados a una cuenta de usuario de sigu.
 
+Novedades 1.2
+-------------
+
+#### General
+* Includido origen para perfilesV2.
+* La barra de progreso se actualiza por storage y no por usuario.
+
+#### Nuevas opciones
+* Nueva opción --dry-no-write que no genera los tars con tamaño 0 en dry-run
+* checkaltdir permite nuevas opciones (-a -o -s)
+
+#### Fixs
+* La búsqueda de ubicaciones alternativas ya funciona en orígenes enlazados.
+*
+
+#### Todo
+* Si falla la inserción en la BBDD hay que almacenar al menos la operación en bbddlog
+
 Novedades 1.1
 -------------
 #### General
@@ -151,6 +169,8 @@ Opciones de control de cambios
 Siguclean en condiciones normales realiza escrituras en diversos lugares: Storages de usuario, tars de los storages, BBDD de sigu y directorio activo. Podemos controlar si escribirá o no con las siguientes opciones:
 
 **--dry-run**: No realiza ninguna operación de escritura sobre ubicaciones originales. Si creará los tars y las carpetas que los contienen pero con tamaño 0. (defaul: False)
+
+**--dry-no-write**: Junto a dry-run, tampoco crea los tars con tamaño 0 de manera que simplemente borrando la carpeta de logs limpiamos el resultado de los lanzamientos para pruebas. Muy util junto con consolidate.
 
 **--soft-run**: Usada junto a la anterior, si genera los tars e inserta registros en la BBDD de sigu, pero no toca los storages originales ni AD. Es útil para probar más a fondo que el proceso se desarrollará sin problemas, sin realizar operaciones de escritura que no sean fáciles de deshacer.
 
@@ -424,7 +444,7 @@ Max tamaño:	4.8 G ( p92juprr )
 
 **ignorearchived** *True|False*: Cambia el modificador global de ignorar o no los ya archivados. "ignorearchived True" sería el equivalente a haber invocado siguclean en modo interactivo con la opción --ignore-archived. Sin parámetros nos dice el estado en el que está.
 
-**checkaltdir** *directorio*: Chequea y ofrece estadísticas de directorios alternativos para  un directorio raiz dado. Esto genera un fichero en /tmp con el basename del directorio seguido de "-ALTS". La estructura de este fichero es así ...
+**checkaltdir** *opciones* *directorio*: Chequea y ofrece estadísticas de directorios alternativos para  un directorio raiz dado. Esto genera un fichero en /tmp con el basename del directorio seguido de "-ALTS". La estructura de este fichero es así ...
 
 ```
 lr1vavak        NOARC   0_MOVIDOS_INACTIVOS_20130725
@@ -439,6 +459,11 @@ u52momia        NOARC   0_MOVIDOS_INACTIVOS_20100426    0_MAIL_MOVIDO_20080313
 ```
 
 Nos dice el usuario, si está archivado o no y la lista de ubicaciones alternativas donde tiene ficheros. Es útil para saber como va el estado de limpia de los directorios alternativos. Llegará un momento en que no sea necesario ejecutarla cuando todos los directorios alternativos hayan sido vaciados.
+
+Las opciones son:
+* *-a* Muestra solo los archivados
+* *-s* Genera sólamente el fichero /tmp/movidos cy no dos ficheros.
+* *-o* Si el usuario está archivado, muestra las sesiones en que lo fue.
 
 El comando da unas estadísticas al final como estas:
 
