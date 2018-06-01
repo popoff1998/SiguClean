@@ -68,9 +68,10 @@ parser.add_argument('--win-password', help='Clave del administrador de windows',
 parser.add_argument('--sigu-password', help='Clave del usuario sigu', dest='ORACLE_PASS', action='store', default=None)
 parser.add_argument('--test', help='Para usar solo en el periodo de pruebas', dest='TEST', action='store_true')
 parser.add_argument('--debug', help='Imprimir mensajes de depuración', dest='DEBUG', action='store_true')
-parser.add_argument('--dry-run', help='No realiza ninguna operación de escritura', dest='DRYRUN', action='store_true')
+parser.add_argument('--dry-run', help='No realiza ninguna operación destructiva sobre los orígenes ni toca la BBDD', dest='DRYRUN', action='store_true')
 parser.add_argument('--soft-run', help='Junto a dry-run, si genera los tars y la inserción en la BBDD', dest='SOFTRUN',
                     action='store_true')
+parser.add_argument('--dry-no-write', help='No realiza ninguna operación de escritura de tars en dry-run', dest='DRYNOWRITE', action='store_true')
 parser.add_argument('-v', help='Incrementa el detalle de los mensajes', dest='verbosity', action='count')
 parser.add_argument('--progress', help='Muestra indicación del progreso', dest='PROGRESS', action='store_true')
 parser.add_argument('-x', '--mount-exclude', help='Excluye esta regex de los posibles montajes', dest='MOUNT_EXCLUDE',
@@ -138,6 +139,10 @@ if config.SOFTRUN and not config.DRYRUN:
     debug("DEBUG-INFO: Forzamos DRYRUN al estar SOFTRUN")
     config.DRYRUN = True
 
+if config.DRYNOWRITE and not config.SOFTRUN:
+    debug("DEBUG-INFO: Forzamos DRYRUN al tener DRYNOWRITE")
+    config.DRYRUN = True
+
 if config.DEBUG and not config.RESTORE and not config.CONSOLIDATE:
     debug('DEBUG-INFO: SessionId: ', config.sessionId, ' Fromdate: ', config.fromDate,
           ' toDate: ', config.toDate, ' Abortalways: ', config.ABORTALWAYS, ' Verbose ',
@@ -199,12 +204,13 @@ else:
     if config.DEBUG:
         debug("DEBUG-INFO: Recuperada lista usuarios desde FS. Numero usuarios: ", len(sesion.accountList))
 
-    #PASO 1 de CONSOLIDACION: Solo lo invocamos si expresemante lo seleccionamos --consolidate-pass1
+    #PASO 1 de CONSOLIDACION: Solo lo invocamos si expresamente lo seleccionamos --consolidate-pass1
     if args.CONSOLIDATEPASS1:
         if not args.CONSOLIDATELIST:
             sesion.consolidate_fs('homenfs')
             sesion.consolidate_fs('homemail')
             sesion.consolidate_fs('perfiles')
+            sesion.consolidate_fs('perfilesv2')
             sesion.consolidate_fs('homecifs')
         else:
             sesion.consolidate(args.CONSOLIDATELIST)
