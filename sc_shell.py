@@ -591,7 +591,7 @@ class Shell(cmd.Cmd):
         """
         Muestra información de archivado del usuario.
 
-        arcinfo -s -i <usuario> [sesion]
+        arcinfo [-s] [-i] <usuario> [sesion]
 
         Si no se especifica -s y la sesión se muestran todas las sesiones.
         La opción -i muestra solo las sesiones en las que tiene archivados.
@@ -731,6 +731,7 @@ class Shell(cmd.Cmd):
     @staticmethod
     def do_ignorearchived(line):
         """Muestra o cambia si debe ignorar los usuarios ya archivados en la selección
+
             ignorearchived <True/False>"""
 
         if line == "":
@@ -756,11 +757,19 @@ class Shell(cmd.Cmd):
 
         self.do_sql("select * from ut_cuentas where ccuenta='"+line+"'")
 
-    @staticmethod
-    def do_checkaltdir(line):
+    #@staticmethod
+    def do_checkaltdir(self,line):
         """Chequea y ofrece estadisticas de directorios alt para un directorio raiz dado
-        checkaltdir <directorio>"""
+
+        checkaltdir [-s] [-o] [-a] <directorio>
+        Sin la opción -s (single) genera los ficheros /tmp/single-movidos y /tmp/multi-movidos
+        Con ella genera solo el fichero /tmp/movidos
+        La opción -o en caso de que el usuario esté archivado nos da al final de cada linea el id de la sesión entre paréntesis
+        La opción -a solo genera líneas para usuarios que ya estén archivados
+        """
         from collections import defaultdict
+
+        args,line = self.parse_with_args(line,['-s','-o','-a'],STRING)
 
         _f = None
         ex_dirs = ('0_ALTHOME','0_UNITYMAIL')
@@ -777,8 +786,12 @@ class Shell(cmd.Cmd):
             for user in userlist:
                 dictdir[user].append(altdir)
 
-        fm = open("/tmp/multi-movidos", "w")
-        fs = open("/tmp/single-movidos", "w")
+        if not '-s' in args:
+            fm = open("/tmp/multi-movidos", "w")
+            fs = open("/tmp/single-movidos", "w")
+        else:
+            f = open("/tmp/movidos", "w")
+            fm = fs = f
 
         for k, v in dictdir.iteritems():
             if len(v) > 1:
@@ -786,19 +799,31 @@ class Shell(cmd.Cmd):
             else:
                 _f = fs
 
-            _f.write(k)
             if is_archived(k) == True:
+                _f.write(k)
                 _f.write("\t" + "_ARC_")
+                sessions = get_sessions_by_user(k)
             else:
-                _f.write("\t" + "NOARC")
+                if not '-a' in args:
+                    _f.write(k)
+                    _f.write("\t" + "NOARC")
+                    sessions = None
+                else:
+                    continue
 
             for value in v:
                 _f.write("\t" + value)
+            if '-o' in args and sessions is not None:
+                for ss in sessions:
+                    _f.write("\t" + "(" + ss[1] + ")")
             _f.write("\n")
-        fm.close()
-        fs.close()
-        print "LENDICT: ", len(dictdir)
-        print "SUMLIST: ", sumuserlist
+        if not '-s' in args:
+            fm.close()
+            fs.close()
+        else:
+            f.close()
+        #print "LENDICT: ", len(dictdir)
+        #print "SUMLIST: ", sumuserlist
 
     @staticmethod
     def do_checkaltusers(line):
@@ -819,7 +844,7 @@ class Shell(cmd.Cmd):
         nosigusildap = 0
         noldap = 0
 
-        ex_dirs = '0_althome'
+        ex_dirs = '0_ALTHOME'
         alluserlist = []
         _f = None
         check_environment()
