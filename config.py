@@ -57,6 +57,7 @@ DEBUG = False
 CHECKED = False
 EXTRADEBUG = False
 VERBOSE = 1
+DRYNOWRITE = False
 DRYRUN = False
 SOFTRUN = False
 CONFIRM = False

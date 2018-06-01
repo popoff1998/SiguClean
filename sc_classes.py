@@ -695,10 +695,13 @@ class Storage(object):
         try:
             if config.DRYRUN and not config.SOFTRUN:
                 # Calculo el tamaño sin comprimir y creo un fichero vacio para la simulacion
-                _f = open(self.tarpath, "w")
+                if not config.DRYNOWRITE:
+                    _f = open(self.tarpath, "w")
+                    _f.close()
+                    self.tarsize = os.lstat(self.tarpath).st_size
+                else:
+                    self.tarsize = 0
                 config.session.log.write_create_done(self.tarpath)
-                _f.close()
-                self.tarsize = os.lstat(self.tarpath).st_size
                 self.state = state.ARCHIVED
                 return True
             # Cambiamos temporalmente al directorio origen para que el tar sea relativo
@@ -853,61 +856,6 @@ class Storage(object):
                 _print(0, "Error unarchiving ", self.key, " to ", self.path, " from ", self.tarpath, " ... ")
                 return False
 
-    def oldexist(self):
-        """Comprueba la accesibilidad de un storage
-        se tiene en cuenta que si no existe en el sitio por defecto
-        puede existir en los root alternativos"""
-        if config.TRACE:
-            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
-
-        # Existe el path
-        if config.DEBUG:
-            debug("DEBUG-INFO: ****** PROCESANDO ", self.path, " *******")
-        if os.path.exists(self.path):
-            self.accesible = True
-            return True
-        # Aun no existiendo puede estar en un directorio movido, lo buscamos
-        parent_dir = os.path.dirname(self.path)
-        basename = os.path.basename(self.path)
-        # Nos aseguramos de que si ya hemos buscado y no hay alternativos salir
-        if parent_dir in config.altdirs and not config.altdirs[parent_dir]:
-            if config.DEBUG:
-                debug("DEBUG-WARNING: User:", self.parent.cuenta, " No existe path directo ni alternativo para ",
-                      self.key, " en ", parent_dir)
-            self.accesible = False
-            return False
-        if config.DEBUG:
-            debug("DEBUG-INFO: User:", self.parent.cuenta, " No existe path directo para ", self.key,
-                  " en ", self.path, " busco alternativo ...")
-        # Buscamos en directorios alternativos del parent_dir
-        # esta busqueda puede ser gravosa si se debe repetir para cada usuario por
-        # lo que una vez averiguados los alternativos se deben de almacenar globalmente
-        if parent_dir not in config.altdirs:
-            if config.DEBUG:
-                debug("DEBUG-INFO: No he construido aun la lista alternativa para ", self.key,
-                      " en ", parent_dir, " lo hago ahora ...")
-            config.altdirs[parent_dir] = [s for s in os.listdir(parent_dir)
-                                          if s.startswith(config.ALTROOTPREFIX)]
-        # Si la lista esta vacia salimos directamente
-        if not config.altdirs[parent_dir]:
-            if config.DEBUG:
-                debug("DEBUG-WARNING: No existen directorios alternativos para ", self.key, " en ", parent_dir)
-            self.accesible = False
-            return False
-        # Buscamos si existe en cualquiera de los directorios alternativos
-        for path in config.altdirs[parent_dir]:
-            joinpath = os.path.join(parent_dir, path, basename)
-            if os.path.exists(joinpath):
-                if config.DEBUG:
-                    debug("DEBUG-INFO: User:", self.parent.cuenta, " encontrado alternativo para ",
-                          self.key, " en ", joinpath)
-                self.path = joinpath
-                self.accesible = True
-                return True
-        # Si llegamos aqui es que no existe
-        self.accesible = False
-        return False
-
     def accesible_now(self):
         """Comprueba si esta accesible en este momento"""
         if config.TRACE:
@@ -927,6 +875,7 @@ class Storage(object):
 
         # Buscamos todos los storages para ese FS
         parent_dir = os.path.dirname(self.path)
+        #print("BORRAME: PARENT_DIR ES:",parent_dir)
         basename = os.path.basename(self.path)
         direct_path = os.path.exists(self.path)
         first_path = True
@@ -943,11 +892,20 @@ class Storage(object):
 
         # Como no hay path directo ni ubicaciones alternativas para este tipo de storage
         # salimos  de la funcion retornando false.
+        if config.EXTRADEBUG:
+            try:
+                debug("EXTRADEBUG-WARNING: parent_dir: ",parent_dir,
+                    " direct_path: ",direct_path,
+                    " config.altdirs: ", " ".join(str(x) for x in config.altdirs),
+                    " config.altdirs[parent_dir]: ", " ".join(str(x) for x in config.altdirs[parent_dir]) )
+            except:
+                pass
 
         if not direct_path and parent_dir in config.altdirs and not config.altdirs[parent_dir]:
             if config.DEBUG:
                 debug("DEBUG-WARNING: User:", self.parent.cuenta, " No existe path directo ni alternativo para ",
                       self.originalkey, " en ", parent_dir)
+
             self.accesible = False
             return False
 
@@ -959,13 +917,22 @@ class Storage(object):
             if config.DEBUG:
                 debug("DEBUG-INFO: No he construido aun la lista alternativa para ", self.originalkey, " en ",
                       parent_dir, " lo hago ahora ...")
-            config.altdirs[parent_dir] = [s for s in os.listdir(parent_dir)
+            if config.EXTRADEBUG:
+                debug("EXTRADEBUG-INFO: self.__dict__: ",self.__dict__)
+            #OJO: parent_dir puede ser un enlazado por ejemplo /nfsro/MAIL3 y este directorio no tiene
+            #los enlaces a las ubicaciones alternativas, por lo que tenemos que buscarlas en el original
+            if self.link is not None:
+                _parent_dir = os.path.dirname(self.link)
+            else:
+                _parent_dir = parent_dir
+
+            config.altdirs[parent_dir] = [s for s in os.listdir(_parent_dir)
                                           if s.startswith(config.ALTROOTPREFIX)]
 
             # Comprobamos el directo
         if direct_path:
             if config.DEBUG:
-                debug("DEBUG-INFO: Encontrado path directo para ", self.originalkey)
+                debug("DEBUG-INFO: Encontrado path directo para ", self.originalkey, " en ",direct_path)
             self.accesible = True
             self.directstorage = True
             first_path = False
@@ -975,10 +942,18 @@ class Storage(object):
             if config.DEBUG:
                 debug("DEBUG-INFO: Existen ubicaciones alternativas de ", self.originalkey, " cuenta: ",
                       self.parent.cuenta)
+            if config.EXTRADEBUG:
+                debug("EXTRADEBUG-INFO: Las ubicaciones alternativas son ", " ".join(str(x) for x in config.altdirs[parent_dir]))
+
 
             # Buscamos si existe en cualquiera de los directorios alternativos
             for path in config.altdirs[parent_dir]:
-                joinpath = os.path.join(parent_dir, path, basename)
+                #OJO: Si se trata de un link como /nfsro/MAIL3/lo-que-sea no nos vale con parent_dir
+                if self.link is not None:
+                    _parent_dir = os.path.dirname(self.link)
+                else:
+                    _parent_dir = parent_dir
+                joinpath = os.path.join(_parent_dir, path, basename)
                 if os.path.exists(joinpath):
                     if config.DEBUG:
                         debug("DEBUG-INFO: User:", self.parent.cuenta, " encontrado alternativo para ",
