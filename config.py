@@ -141,7 +141,7 @@ if TEST:
               {'account': 'MAIL', 'fs': 'homemail', 'label': 'NEWMAILTEST', 'mandatory': False, 'val': ''})
 else:
     MOUNTS = ({'account': 'LINUX', 'fs': 'homenfs', 'label': 'HOMESNFS', 'mandatory': True, 'val': ''},
-              {'account': 'MAIL', 'fs': 'homemail', 'label': 'NEWMAIL/MAIL', 'mandatory': True, 'val': ''},
+              {'account': 'MAIL', 'fs': 'homemail', 'label': 'mail', 'mandatory': True, 'val': ''},
               {'account': 'WINDOWS', 'fs': 'perfiles', 'label': 'NEWPERFILES', 'mandatory': False, 'val': ''},
               {'account': 'WINDOWS', 'fs': 'perfilesv2', 'label': 'PERFILESV2', 'mandatory': False, 'val': ''},
               {'account': 'WINDOWS', 'fs': 'homecifs', 'label': 'HOMESCIF', 'mandatory': True, 'val': ''})
