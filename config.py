@@ -144,6 +144,7 @@ else:
               {'account': 'MAIL', 'fs': 'homemail', 'label': 'mail', 'mandatory': True, 'val': ''},
               {'account': 'WINDOWS', 'fs': 'perfiles', 'label': 'NEWPERFILES', 'mandatory': False, 'val': ''},
               {'account': 'WINDOWS', 'fs': 'perfilesv2', 'label': 'PERFILESV2', 'mandatory': False, 'val': ''},
+              {'account': 'WINDOWS', 'fs': 'perfilesv5', 'label': 'PERFILESV5', 'mandatory': False, 'val': ''},
               {'account': 'WINDOWS', 'fs': 'homecifs', 'label': 'HOMESCIF', 'mandatory': True, 'val': ''})
 
     sessionId = ""
