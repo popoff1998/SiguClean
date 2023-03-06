@@ -1,3 +1,9 @@
+## EXCLUSIONES DE TONIN ###
+.gitattributes
+.idea/
+.spyderproject
+*.OLD
+
 #################
 ## Eclipse
 #################

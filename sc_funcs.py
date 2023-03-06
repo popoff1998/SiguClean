@@ -174,8 +174,13 @@ def check_connections():
         traceprint(current_func(),current_parent())
 
     _print(1, "  Comprobando conexiones")
-    import cx_Oracle
+
+    checkLdapConnection()
+    checkOracleConnection()
+
+def checkLdapConnection():
     from pyssword import pyssword
+
     # LDAP
     if not config.WINDOWS_PASS:
         config.WINDOWS_PASS = pyssword('     Introduzca la clave de windows (administrador): ')
@@ -184,6 +189,11 @@ def check_connections():
         open_ldap(False)
         if config.status.ldapCon is True:
             _print(1, "CORRECTO")
+
+
+def checkOracleConnection():
+    import cx_Oracle
+    from pyssword import pyssword
 
     # Oracle
     if not config.ORACLE_PASS:
@@ -197,7 +207,6 @@ def check_connections():
         except cx_Oracle.DatabaseError:
             _print(1, "ERROR")
             config.status.oracleCon = False
-
 
 def get_mount_point(algo, exclude_regex):
     """Devuelve el punto de montaje que contiene algo en el export"""
@@ -457,6 +466,7 @@ def dn_from_user(user):
     return _status, dn, tupla, result_type
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
+
 def ldap_from_sigu(cuenta, attr):
     """Consulta un atributo ldap mediante sigu"""
     if config.TRACE:
@@ -477,8 +487,7 @@ def ldap_from_sigu(cuenta, attr):
     q_ldap_sigu = 'select uf_leeldap(' + comillas(cuenta) + ',' + comillas(attr) + ') from dual'
 
     try:
-        cursor = config.oracleCon.cursor()
-        cursor.execute(q_ldap_sigu)
+        cursor = bbdd_execute(q_ldap_sigu)
         tmp_list = cursor.fetchall()
         cursor.close()
     except BaseException, error:
@@ -494,8 +503,7 @@ def ldap_from_sigu(cuenta, attr):
     # Hacemos la comprobacion en people-deleted
     q_ldap_sigu = 'select uf_leeldap(' + comillas(cuenta) + ',' + comillas(attr) + ',' + comillas('B') + ') from dual'
     try:
-        cursor = config.oracleCon.cursor()
-        cursor.execute(q_ldap_sigu)
+        cursor = bbdd_execute(q_ldap_sigu)
         tmp_list = cursor.fetchall()
         cursor.close()
     except BaseException, error:
@@ -516,8 +524,7 @@ def scha_from_ldap(cuenta):
     q_ldap_sigu = 'select cServicio,tServicio,uf_valida_servicio_ldap(' + comillas(
         cuenta) + ',cServicio) from ut_servicios_mapa'
     # q_ldap_sigu = 'select sigu.ldap.uf_leeldap(\''+cuenta+'\',\'schacuserstatus\') from dual'
-    cursor = config.oracleCon.cursor()
-    cursor.execute(q_ldap_sigu)
+    cursor = bbdd_execute(q_ldap_sigu)
     tmp_list = cursor.fetchall()
     #pprint(tmp_list)
     cursor.close()
@@ -606,8 +613,7 @@ def get_list_by_date(to_date, from_date='1900-01-01'):
     if config.DEBUG:
         debug("DEBUG-INFO: (get_list_by_date) Query:", query)
     try:
-        cursor = config.oracleCon.cursor()
-        cursor.execute(query)
+        cursor = bbdd_execute(query)
         tmp_list = cursor.fetchall()
         cursor.close()
     except BaseException, error:
@@ -633,8 +639,7 @@ def get_archived_by_date(to_date, from_date='1900-01-01'):
     if config.DEBUG:
         debug("DEBUG-INFO: (get_list_by_date) Query:", query)
     try:
-        cursor = config.oracleCon.cursor()
-        cursor.execute(query)
+        cursor = bbdd_execute(query)
         tmp_list = cursor.fetchall()
         cursor.close()
     except BaseException, error:
@@ -659,8 +664,7 @@ def get_unarchived_by_date(to_date, from_date='1900-01-01'):
     if config.DEBUG:
         debug("DEBUG-INFO: (get_list_by_date) Query:", query)
     try:
-        cursor = config.oracleCon.cursor()
-        cursor.execute(query)
+        cursor = bbdd_execute(query)
         tmp_list = cursor.fetchall()
         cursor.close()
     except BaseException, error:
@@ -686,9 +690,8 @@ def is_archived(user):
 
     #TODO: La funcion UF_ST_ULTIMA no devuelve 9 para los que no estan caducados
     try:
-        cursor = config.oracleCon.cursor()
         # Llamo a la función uf_st_ultima
-        ret = cursor.callfunc('UF_ST_ULTIMA_TONIN', cx_Oracle.STRING, [user])
+        cursor,ret = bbdd_callfunc('UF_ST_ULTIMA_TONIN', cx_Oracle.STRING, [user])
         _print(2,"USER: ",user," RET_UF_ST_ULTIMA_TONIN: ",ret)
         cursor.close()
         if ret == "0":
@@ -719,8 +722,7 @@ def is_expired(user):
         traceprint(current_func(),current_parent())
 
     try:
-        cursor = config.oracleCon.cursor()
-        cursor.execute("select CESTADO from ut_cuentas where CCUENTA = " + comillas(user))
+        cursor = bbdd_execute("select CESTADO from ut_cuentas where CCUENTA = " + comillas(user))
         ret = fetch_single(cursor)
         cursor.close()
     except BaseException, error:
@@ -742,8 +744,7 @@ def has_archived_data(user):
         traceprint(current_func(),current_parent())
 
     try:
-        cursor = config.oracleCon.cursor()
-        cursor.execute("select unique ccuenta from ut_st_storage where ccuenta = " + comillas(user))
+        cursor = bbdd_execute("select unique ccuenta from ut_st_storage where ccuenta = " + comillas(user))
         ret = fetch_single(cursor)
         cursor.close()
         if ret == "":
@@ -766,8 +767,7 @@ def has_cuenta_nt(cuenta):
 
     if config.NTCHECK == 'sigu' or config.NTCHECK == 'both':
         query = config.Q_GET_CUENTA_NT % comillas(cuenta)
-        cursor = config.oracleCon.cursor()
-        cursor.execute(query)
+        cursor = bbdd_execute(query)
         stat_sigu = cursor.fetchall()
         cursor.close()
 
@@ -1046,9 +1046,9 @@ def delete_bbdd_storage(idsesion, ccuenta, ttar):
         traceprint(current_func(),current_parent())
 
     try:
-        cursor = config.oracleCon.cursor()
         query = "delete from ut_st_storage where  CCUENTA =" + comillas(ccuenta) + " AND IDSESION = " + str(idsesion) + " AND TTAR=" + comillas(ttar)
-        cursor.execute(query)
+        cursor = bbdd_execute(query)
+        #Este commit inmediato no debe dar problemas
         config.oracleCon.commit()
         cursor.close()
         _print(0,"Borrado en la bbdd el storage de ",ccuenta)
@@ -1059,14 +1059,51 @@ def delete_bbdd_storage(idsesion, ccuenta, ttar):
         _print(0,"ERROR: ",error)
         return False
 
+def bbdd_execute(sql):
+    """Ejecuta una sentencia sql de forma atomica"""
+    reintentos=2
+    for intento in range(reintentos):
+        try:
+            cursor = config.oracleCon.cursor()
+            cursor.execute(sql)
+            return cursor
+        except cx_Oracle.InterfaceError as e:
+            #Hay un error de conexion, reconectamos y reintentamos
+            _print(0,"Error en la conexion a la bbdd, reintento ",intento+1)
+            checkOracleConnection()
+    raise e
+
+def bbdd_callfunc(func,type,list):
+    reintentos=2
+    for intento in range(reintentos):
+        try:
+            cursor = config.oracleCon.cursor()
+            ret = cursor.callfunc(func,type,list)
+            return cursor,ret
+        except cx_Oracle.InterfaceError as e:
+            #Hay un error de conexion, reconectamos y reintentamos
+            _print(0,"Error en la conexion a la bbdd, reintento ",intento+1)
+            checkOracleConnection()
+    raise e
+
+def bbdd_commit():
+    reintentos=2
+    for intento in range(reintentos):
+        try:
+            config.oracleCon.commit()
+        except cx_Oracle.InterfaceError as e:
+            #Hay un error de conexion, reconectamos y reintentamos
+            _print(0,"Error en la conexion a la bbdd, reintento ",intento+1)
+            checkOracleConnection()
+    raise e
+
 def get_sessions_by_user(user):
     """Devuelve las sesiones en las que un usuario tiene archivados"""
 
     check_environment()
 
-    cursor = config.oracleCon.cursor()
     query = "select DISTINCT a.idsesion,b.dsesion from ut_st_storage A, ut_st_sesion B where ccuenta= " + comillas(user) + " and a.idsesion=b.idsesion"
-    cursor.execute(query)
+    cursor = bbdd_execute(query)
     rows = cursor.fetchall()
 
     return rows
@@ -1076,9 +1113,8 @@ def has_cuenta_sigu(user):
 
     check_environment()
 
-    cursor = config.oracleCon.cursor()
     query = "select ccuenta from ut_cuentas where ccuenta =" + comillas(user)
-    cursor.execute(query)
+    cursor = bbdd_execute(query)
     row = fetch_single(cursor)
 
     if row:
