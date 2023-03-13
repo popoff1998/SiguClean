@@ -3,6 +3,7 @@
 .idea/
 .spyderproject
 *.OLD
+*.txt
 
 #################
 ## Eclipse

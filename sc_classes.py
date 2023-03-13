@@ -40,6 +40,9 @@ class Session(object):
         self.userList = []
         self.excludeuserslist = []
         self.tarsizes = 0
+        self.size_origs = 0
+        self.size_orig_by_key = {}
+        self.files = 0
         self.tardir = ''
         self.abortCount = 0
         self.abortLimit = config.ABORTLIMIT
@@ -599,6 +602,14 @@ class Session(object):
                 if not self.die(user, True):
                     continue
             self.tarsizes = self.tarsizes + user.tarsizes
+            self.size_origs = self.size_origs + user.size_origs
+            self.files = self.files + user.files
+            #Acumulammos el size_orig_by_key desde el diccionario del usuario
+            for key in user.size_orig_by_key:
+                if key in self.size_orig_by_key:
+                    self.size_orig_by_key[key] = self.size_orig_by_key[key] + user.size_orig_by_key[key]
+                else:
+                    self.size_orig_by_key[key] = user.size_orig_by_key[key]
             # ... Borramos storage ...
             #Evitamos si el usuario es DUMMY
             if user.dummy or user.ignore:
@@ -644,6 +655,7 @@ class Session(object):
                 if self.tarsizes > config.MAXSIZE:
                     skip = True
         _print(1, 'Tamaño de tars de la session ', self.sessionId, ' es ', size_to_human(self.tarsizes))
+        _print(1, 'Tamaño de los originales de la session ', self.sessionId, ' es ', size_to_human(self.size_origs))
         self.stats.fin = datetime.datetime.now()
         self.stats.show()
 
@@ -693,9 +705,25 @@ class Storage(object):
         self.tarpath = rootpath + '/' + self.parent.cuenta + '@' + self.key + '@' + config.sessionId + ".tar.bz2"
         _print(1, "Archivando ", self.key, " from ", self.path, " in ", self.tarpath, " ... ")
         try:
+            if config.COUNTRUN:
+                self.tarsize = 0
+                self.files = 0
+                for root, dirs, files in os.walk(self.path):
+                    for _f in files:
+                        #debemos excluir los links simbolicos
+                        if not os.path.islink(os.path.join(root, _f)):
+                            _size = os.path.getsize(os.path.join(root, _f))
+                            self.size_orig += _size
+                            self.files += 1
+                self.state = state.ARCHIVED
+                if config.COUNTDEBUG:
+                    debug("DEBUG-INFO: (storage.archive) Tamaño de ",self.key," es ",size_to_human(self.size_orig)) 
+                return True
             if config.DRYRUN and not config.SOFTRUN:
                 # Calculo el tamaño sin comprimir y creo un fichero vacio para la simulacion
                 if not config.DRYNOWRITE:
+                    if config.EXTRADEBUG:
+                        debug("DEBUG-INFO: (storage.archive) Creando directorio ", self.tarpath)
                     _f = open(self.tarpath, "w")
                     _f.close()
                     self.tarsize = os.lstat(self.tarpath).st_size
@@ -768,15 +796,17 @@ class Storage(object):
             traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
 
         # Primero tengo que controlar si no existe y no es mandatory
-        if config.DEBUG:
-            debug("DEBUG-INFO: (storage.delete) ", self.key, " en ", self.path)
         if not self.accesible and not self.mandatory:
             self.state = state.NOACCESIBLE
             return True
         try:
             if config.DRYRUN:
                 self.state = state.DELETED
+                if config.DEBUG:
+                    debug("DEBUG-INFO: (storage.delete) NO BORRADO POR DRYRUN ", self.key, " en ", self.path)
                 return True
+            if config.DEBUG:
+                debug("DEBUG-INFO: (storage.delete) ", self.key, " en ", self.path)
             rmtree(self.path)
             if self.link is not None:
                 os.remove(self.link)
@@ -1003,7 +1033,7 @@ class User(object):
             if config.DEBUG:
                 debug("DEBUG-WARNING: (user.__init__) YA EXISTIA USUARIO ", self.cuenta, " VUELVO DE INIT")
                 print "CUENTA: ",self.cuenta
-            #Actualmente comento el siguiente return porque dentro de la shell interactiva no me funciona bien si retorno si inicializar las
+            #Actualmente comento el siguiente return porque dentro de la shell interactiva no me funciona bien si retorno sin inicializar las
             #variables de nuevo. De hecho con do_storage se me va añadiendo el utimo storage repetido cada vez que llamo al metodo con el mismo
             #usuario.
 
@@ -1017,6 +1047,9 @@ class User(object):
         self.failreason = None
         self.cuenta = cuenta
         self.tarsizes = 0
+        self.size_origs = 0
+        self.size_orig_by_key = {}
+        self.files = 0
         self.dummy = False
         self.ignore = False
 
@@ -1126,6 +1159,11 @@ class User(object):
 
         # Esta archivado?
         archived = is_archived(self.cuenta)
+
+        #En el caso de countrun suponemos que no está archivado
+        if config.COUNTRUN:
+            archived = False
+
         # Si la sesion es de consolidacion pasamos del chequeo de si esta archivado o no
         if not config.CONSOLIDATE:
             if archived is True and not config.BYPASS:
@@ -1297,7 +1335,8 @@ class User(object):
 
         self.rootpath = tardir + '/' + self.cuenta
         if not os.path.isdir(self.rootpath):
-            os.mkdir(self.rootpath, 0777)
+            if not config.DRYNOWRITE:
+                os.mkdir(self.rootpath, 0777)
 
     def unarchive(self, tardir):
         """Este metodo es useless pues debe rellenar los storages primero"""
@@ -1317,6 +1356,8 @@ class User(object):
             traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
 
         self.tarsizes = 0
+        self.size_origs = 0
+        self.files = 0
         storage = None
         ret = False
         # Vemos si rootpath existe
@@ -1352,6 +1393,9 @@ class User(object):
             else:
                 ret = True
                 self.tarsizes = self.tarsizes + storage.tarsize
+                self.size_origs = self.size_origs + storage.size_orig
+                self.size_orig_by_key[storage.key] = storage.size_orig
+                self.files = self.files + storage.files
 
         if not ret:
             _print(0, 'WARNING: Error archivando usuario ', self.cuenta, ' fs ', storage.key, ' haciendo rollback')
@@ -1361,6 +1405,8 @@ class User(object):
             return False
         else:
             _print(2, 'INFO: El tamaño de los tars para ', self.cuenta, ' es: ', self.tarsizes)
+            _print(2, 'INFO: El tamaño original para ', self.cuenta, ' es: ', size_to_human(self.size_origs))
+            _print(2, 'INFO: El numero de ficheros para ', self.cuenta, ' es: ', self.files)
             return True
 
     def archive_dn(self, tardir):
@@ -1374,6 +1420,11 @@ class User(object):
         if not self.adObject:
             self.failreason = format_reason(self.cuenta, config.reason.NODNINAD, "---", self.parent.stats)
             return False
+        # Si es drynowrite no hacemos nada    
+        if config.DRYNOWRITE:
+            if config.DEBUG:
+                debug("DEBUG-INFO: (archive_dn) drynowrite activado. No se archiva el DN")
+            return True
         try:
             ad_file = open(self.rootpath + '/' + self.cuenta + '.dn', 'w')
             pickle.dump(self.adObject, ad_file)
@@ -1394,12 +1445,14 @@ class User(object):
         # excepción ldap.SERVER_DOWN. Deberemos reabrir la conexión y reintentar el borrado
 
         import ldap
-        _print(1, 'Borrando DN: ', self.dn)
 
         if self.dn is not None:
             try:
                 if config.DRYRUN:
+                    if config.DEBUG:
+                        debug("DEBUG-INFO: (delete_dn) dryrun activado. No se borra el DN")
                     return True
+                _print(1, 'Borrando DN: ', self.dn)
                 config.ldapCon.delete_s(self.dn)
                 return True
             except ldap.SERVER_DOWN:

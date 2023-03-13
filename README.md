@@ -3,11 +3,23 @@ SiguClean
 
 SiguClean es una utilidad para archivar los espacios de almacenamiento asociados a una cuenta de usuario de sigu.
 
+Novedades 1.1.3
+---------------
+
+#### Nuevas opciones
+* Nueva opción --count-run para calcular el espacio que se va a archivar en una sesión.
+* Nueva opción --extra-debug para activar la depuración extra sin tocar el código
+* Nueva opción --count-debug para depurar count-run
+
+#### Fixs
+* Cambiado servidor de ldap de AD a la nueva infraestructura
+* Añadida más info de depuración
+ 
 Novedades 1.1.2
--------------
+---------------
 
 #### General
-* Includido origen para perfilesV2.
+* Incluido origen para perfilesV5.
 * La barra de progreso se actualiza por storage y no por usuario.
 
 #### Nuevas opciones
@@ -117,6 +129,10 @@ Como es lógico, usaremos este mecanismo en caso de que estemos haciendo un pre-
 
 **--debug**: Genera información de depuración, tanto por pantalla como en el fichero debug. (Default: False)
 
+**--extra-debug**: Genera información de depuración extra, tanto por pantalla como en el fichero debug. (Default: False)
+
+**--count-debug**: Genera información de depuración específica de la opción *--count-run*. (Default: False)
+
 **-v**: Nivel de detalle de los mensajes. Se incrementa poniendo repetidas "v", por ejemplo -vvv sería un nivel de verbose 3. (Default: 0)
 
 **--progress**: Muestra una barra de % de progreso y de ETA estimado. Solo se muestra si tenemos verbose a 0 y si debug no está activado. (Default: False)
@@ -170,9 +186,11 @@ Siguclean en condiciones normales realiza escrituras en diversos lugares: Storag
 
 **--dry-run**: No realiza ninguna operación de escritura sobre ubicaciones originales. Si creará los tars y las carpetas que los contienen pero con tamaño 0. (defaul: False)
 
-**--dry-no-write**: Junto a dry-run, tampoco crea los tars con tamaño 0 de manera que simplemente borrando la carpeta de logs limpiamos el resultado de los lanzamientos para pruebas. Muy util junto con consolidate.
+**--dry-no-write**: Junto a dry-run, tampoco crea los tars con tamaño 0 de manera que simplemente borrando la carpeta de logs limpiamos el resultado de los lanzamientos para pruebas. Muy util junto con consolidate. (default: False)
 
-**--soft-run**: Usada junto a la anterior, si genera los tars e inserta registros en la BBDD de sigu, pero no toca los storages originales ni AD. Es útil para probar más a fondo que el proceso se desarrollará sin problemas, sin realizar operaciones de escritura que no sean fáciles de deshacer.
+**--soft-run**: Usada junto a la anterior, si genera los tars e inserta registros en la BBDD de sigu, pero no toca los storages originales ni AD. Es útil para probar más a fondo que el proceso se desarrollará sin problemas, sin realizar operaciones de escritura que no sean fáciles de deshacer. (default: False)
+
+**--count-run**: Sirve para calcular el tamaño que ahorraremos con la ejecución de la sesión. No realiza ninguna operación de escritura sobre ubicaciones originales, ni crea los tars ni las carpetas que los contienen. Tampoco toca la BBDD ni AD (defaul: False)
 
 Opciones de selección
 ---------------------
@@ -183,7 +201,7 @@ En siguclean podemos realizar varias selecciones que afectan al proceso del prog
 
 **-t, --to** < fecha >: Fecha hasta la que se seleccionan usuarios, en el formato `YYYY-MM-DD`. (Default: None)
 
-**-f, --fromdate** < fecha >: Fecha desde la que se seleccionan usuarios en el mismo formato que la anterior. Si no se especifica se asume una fecha muy en el pasado para que al final se seleccione cualquier usuario afectado hasta la fecha anterior. (Default: None)
+**-f, --from** < fecha >: Fecha desde la que se seleccionan usuarios en el mismo formato que la anterior. Si no se especifica se asume una fecha muy en el pasado para que al final se seleccione cualquier usuario afectado hasta la fecha anterior. (Default: None)
 
 **--fromfile** < fichero >: En lugar de consultar los usuarios en sigu, se usan los del fichero especificado donde cada usuario va en una línea distinta. Es útil cuando se quiere volver a lanzar el procedimiento solo con los usuarios de cualquiera de los ficheros resultado que contenga usuarios que han fallado.
 
@@ -288,6 +306,7 @@ Las razones pueden ser:
 - *NODNINAD*: EL usuario no tiene DN en active directory teniendo que tenerla al tener cuenta windows. Lógicamente solo se producirá este error si la consulta de cuenta windows se hace solo por sigu y no por ad o both.
 - *EXPLICITEXCLUDED*: Se ha excluido explicitamente en el fichero de la opción *--exclude-userfile*.
 - *NOTALLSERVICESOFF*: El usuario no tiene todos sus servicios ldap a off y por tanto no debe ser archivado.
+- *NOTARCHIVABLE*: El estado del usuario en sigu no es ni true ni false ni none.
 
 
 Modo interactivo

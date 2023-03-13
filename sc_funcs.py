@@ -559,6 +559,9 @@ def are_services_off(services):
 def all_services_off(user):
     if config.TRACE:
         traceprint(current_func(),current_parent())
+    #Si estamos en COUNTRUN, devolvemos true
+    if config.COUNTRUN:
+        return True
 
     services = scha_from_ldap(user)
     # Si no devuelve nada, no tiene ningun servicio a off
@@ -926,6 +929,15 @@ class Stats(object):
         _print(0, "Incorrectos:\t", self.total - self.correctos)
         if config.MANUALDELETE:
             _print(0, "ManualDelete:\t",self.manualdelete," storages")
+
+        if config.COUNTRUN:
+            _print(0,"\n--- Detalles de COUNTRUN ---\n")
+            _print(0,"Tamaño de los originales:\t",size_to_human(self.session.size_origs))
+            _print(0,"Ficheros originales:\t\t",self.session.files)
+            #Imprimimos el disccionario self.session.size_orig_by_key
+            _print(0,"Tamaño de los originales por tipo:")
+            for key in self.session.size_orig_by_key:
+                _print(0,"  ",key,"\t",size_to_human(self.session.size_orig_by_key[key]))
 
         _print(0, "\n--- Detalles de fallos ---\n")
         _print(0, "Failed:\t\t", self.failed)

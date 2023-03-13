@@ -68,10 +68,13 @@ parser.add_argument('--win-password', help='Clave del administrador de windows',
 parser.add_argument('--sigu-password', help='Clave del usuario sigu', dest='ORACLE_PASS', action='store', default=None)
 parser.add_argument('--test', help='Para usar solo en el periodo de pruebas', dest='TEST', action='store_true')
 parser.add_argument('--debug', help='Imprimir mensajes de depuración', dest='DEBUG', action='store_true')
+parser.add_argument('--extra-debug', help='Imprimir mensajes extras de depuración', dest='EXTRADEBUG', action='store_true')
+parser.add_argument('--count-debug', help='Imprimir mensajes extras de depuración', dest='COUNTDEBUG', action='store_true')
 parser.add_argument('--dry-run', help='No realiza ninguna operación destructiva sobre los orígenes ni toca la BBDD', dest='DRYRUN', action='store_true')
 parser.add_argument('--soft-run', help='Junto a dry-run, si genera los tars y la inserción en la BBDD', dest='SOFTRUN',
                     action='store_true')
 parser.add_argument('--dry-no-write', help='No realiza ninguna operación de escritura de tars en dry-run', dest='DRYNOWRITE', action='store_true')
+parser.add_argument('--count-run', help='Calcula solamente el espacio ocupado por los storages de los usuarios', dest='COUNTRUN', action='store_true')
 parser.add_argument('-v', help='Incrementa el detalle de los mensajes', dest='verbosity', action='count')
 parser.add_argument('--progress', help='Muestra indicación del progreso', dest='PROGRESS', action='store_true')
 parser.add_argument('-x', '--mount-exclude', help='Excluye esta regex de los posibles montajes', dest='MOUNT_EXCLUDE',
@@ -134,6 +137,12 @@ if args.interactive:
 if args.version:
     print __version__
     os._exit(True)
+
+if config.COUNTRUN:
+    debug("DEBUG-INFO: Forzamos DRYNOWRITE al tener COUNTRUN")
+    config.DRYNOWRITE = True
+    debug("DEBUG-INFO: Forzamos DRYRUN al tener COUNTRUN")
+    config.DRYRUN = True
 
 if config.SOFTRUN and not config.DRYRUN:
     debug("DEBUG-INFO: Forzamos DRYRUN al estar SOFTRUN")

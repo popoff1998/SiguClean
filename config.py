@@ -49,17 +49,18 @@ class Status(object):
         exec("self.%s = %s" % (field,val))
 
 # Defines (globales)
-__version__ = "1.1.1"
-
+__version__ = "1.1.3"
 TEST = False
 ONESHOT = False
 DEBUG = False
-CHECKED = False
 EXTRADEBUG = False
+COUNTDEBUG = False
+CHECKED = False
 VERBOSE = 1
 DRYNOWRITE = False
 DRYRUN = False
 SOFTRUN = False
+COUNTRUN = False
 CONFIRM = False
 PROGRESS = False
 IGNOREARCHIVED = False
@@ -94,7 +95,7 @@ Q_IGNORE_ARCHIVED = 'UF_ST_ULTIMA_TONIN(CCUENTA) !=\'0\''
 Q_ONLY_ARCHIVED = 'UF_ST_ULTIMA_TONIN(CCUENTA) =\'0\''
 
 # LDAP_SERVER = "ldap://ldap1.priv.uco.es"
-LDAP_SERVER = "ldaps://ucoad01.uco.es"
+LDAP_SERVER = "ldaps://docad01.uco.es"
 BIND_DN = "Administrador@uco.es"
 USER_BASE = "dc=uco,dc=es"
 ORACLE_SERVER = 'ibmblade47/av10g'
