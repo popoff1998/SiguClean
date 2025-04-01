@@ -60,6 +60,8 @@ class Session(object):
         # Comprobamos los parametros para poder ejecutar
         if not self.sessionId:
             raise ValueError
+        if config.TRACE:
+            print("TRACE: antes de comprobar FROMDATE")
         if not self.fromDate:
             self.fromDate = '1900-01-01'
         if not self.toDate:
@@ -77,6 +79,9 @@ class Session(object):
             # Abortamos porque no existe el directorio padre de los tars
             _print(0, 'ABORT: (session-start) No existe el directorio para tars: ', config.TARDIR)
             os._exit(False)
+        if config.TRACE:
+            print("TRACE: antes de crear dir de logs")    
+        # Directorio para logs
         self.log = Log(self)
         self.stats = Stats(self)
         # Tratamos MAXSIZE
@@ -1527,4 +1532,15 @@ class User(object):
         storage_list = []
         for _storage in self.storage:
             storage_list.append([_storage.key,_storage.path,("True" if _storage.accesible else "False"),_storage.state])
+        return storage_list
+
+    def get_accesible_storage_list(self):
+        if config.TRACE:
+            traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
+
+        #devuelve una lista de strings con los storages accesibles
+        storage_list = []
+        for _storage in self.storage:
+            if _storage.accesible_now():
+                storage_list.append(_storage.key)
         return storage_list

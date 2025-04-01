@@ -1,7 +1,7 @@
 SIGU =
  (DESCRIPTION = 
    (ADDRESS_LIST =
-     (ADDRESS = (PROTOCOL = TCP)(HOST = ibmblade47.uco.es)(PORT = 1521))
+     (ADDRESS = (PROTOCOL = TCP)(HOST = ora-av10g.bbdd.uco.es)(PORT = 1521))
    )
  (CONNECT_DATA =
    (SERVICE_NAME = av10g)
