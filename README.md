@@ -3,6 +3,10 @@ SiguClean
 
 SiguClean es una utilidad para archivar los espacios de almacenamiento asociados a una cuenta de usuario de sigu.
 
+Novedades 1.1.4
+---------------
+* Nuevo comando statsbytype que muestra estadísticas de archivado por tipo de storage.
+  
 Novedades 1.1.3
 ---------------
 
@@ -348,6 +352,8 @@ Tamaño Arch:	409.5 G
 Max ficheros:	98470 ( i72cafef )
 Max tamaño:	4.8 G ( p92juprr )
 ```
+
+**statsbytype** *idsesion*: Muestra estadísticas de archivado de una sesión por tipo de storage. Si no se especifica la sesión, se muestran las estadísticas globales.
 
 **arcinfo** *usuario*: Muestra información de archivado de un usuario. La salida es como esta:
 ```

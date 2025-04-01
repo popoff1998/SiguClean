@@ -23,6 +23,29 @@ class Shell(cmd.Cmd):
     @staticmethod
     def parse(line):
         return line.split()
+    
+    @staticmethod
+    #Parsea la linea devolviendo un diccionario con los argumentos y una lista con los argumentos posicionales
+    def parse_line(line, args_with_values=()):
+        args = {}
+        positional_args = []
+        parts = line.strip().split()
+        i = 0
+        while i < len(parts):
+            if parts[i].startswith('-'):
+                arg_name = parts[i].lstrip('-')
+                if arg_name in args_with_values:
+                    if i + 1 < len(parts) and not parts[i+1].startswith('-'):
+                        args[arg_name] = parts[i+1]
+                        i += 1
+                    else:
+                        raise ValueError("El argumento '" + arg_name + "' requiere un valor")
+                else:
+                    args[arg_name] = True
+            else:
+                positional_args.append(parts[i])
+            i += 1
+        return args, positional_args
 
     @staticmethod
     def parse_with_args(line,valid_options,type):
@@ -140,11 +163,13 @@ class Shell(cmd.Cmd):
         Comprueba si existen restos de storages de usuarios que ya ha
         sido archivados en el rango temporal especificado.
 
-        checktrash [-p] <fromdate todate>
+        checktrash [-p] [-f tofile ] <fromdate todate>
 
         Si tenemos fromfile no hace falta poner las dos fechas. Si no lo
         tenemos y omitimos las fechas se aplica a todos los archivados.
+        
         La opción -p muestra la barra de progreso
+        La opción -f guarda el resultado en el fichero tofile
         """
 
         config.WINDOWS_PASS = "dummy"
@@ -155,10 +180,21 @@ class Shell(cmd.Cmd):
         self.stats = Stats(self)
         config.LDAPRELAX = True
 
-        args,line = self.parse_with_args(line,['-p'],STRING)
-
-        if '-p' in args:
+        args,line = self.parse_line(line,('-f'))
+        if 'p' in args.keys():
             config.PROGRESS = True
+        if 'f' in args.keys():
+            #leemos tofile despues de la opcion -f
+            tofile = args['f']
+            if tofile is None:
+                print "Falta el nombre del fichero"
+                return
+            #Abrimos tofile
+            try:
+                tofile = open(tofile,"w",0)
+            except IOError, error:
+                print "Error abriendo ",tofile,": ",error
+                return
 
         if config.FROMFILE is not None:
             userlist = []
@@ -170,7 +206,9 @@ class Shell(cmd.Cmd):
                 print "Usuarios de ", config.FROMFILE, " = ", len(userlist)
         else:
             try:
-                _fromDate, _toDate = self.parse(line)
+                #_fromDate, _toDate = self.parse(line)
+                _fromDate = line[0]
+                _toDate = line[1]
                 userlist = get_archived_by_date(_toDate, _fromDate)
             except BaseException, error:
                 print "Error recuperando la cuenta de usuarios de SIGU: ", error
@@ -180,9 +218,7 @@ class Shell(cmd.Cmd):
         if len(userlist) == 0:
             return
 
-        result_list = []
         founds=0
-        strfounds="      "
         if have_progress():
             #TODO: Actualizar progressbar para poder poner los usuarios encontrados como DynamicMessage
             pbar = ProgressBar(widgets=[Percentage(), " ", Bar(marker=RotatingMarker()), " ", ETA()],
@@ -191,8 +227,6 @@ class Shell(cmd.Cmd):
             pbar.update(0)
             pbar_index=0
 
-        strfounds = str(founds)
-
         for account in userlist:
             if have_progress():
                 pbar_index += 1
@@ -200,18 +234,17 @@ class Shell(cmd.Cmd):
             user = User(account,self)
             user.check()
             user_storages = user.accesible_storages()
+            user_storages_list = user.get_accesible_storage_list()
             if user_storages > 0:
+                _str = "USER: "+account+" ACCESIBLE_STORAGES: "+str(user_storages)+" "+str(user_storages_list)+"\n"
                 if have_progress():
-                    result_list.append([account,user_storages])
-                    founds +=1
-                    strfounds = str(founds)
+                    if 'f' in args.keys():
+                        tofile.write(_str)
                 else:
-                    print "USER: ",account," ACCESIBLE_STORAGES: ",user_storages
-
-        if have_progress():
-            for result in result_list:
-                print "USER: ",result[0]," ACCESIBLE_STORAGES: ",result[1]
-
+                    if 'f' in args.keys():
+                        tofile.write(_str)
+                    else:
+                        print _str
 
     @staticmethod
     def do_isarchived(line):
@@ -421,6 +454,44 @@ class Shell(cmd.Cmd):
         isexpired <usuario>"""
         check_environment()
         print is_expired(line)
+
+    @staticmethod
+
+    # Metodo para ver los detalles de los starts de una sesion
+    # mostrando las estadisticas pero por cada tipo de storage
+    # Para cada uno de los config.MOUNTS se debe mostrar el total de ficheros y el total de tamaño
+    # al metodo se le pasará el id de la sesion
+
+    def do_statsbytype(line):
+        """Muestra las estadisticas de una sesion por tipo de storage
+        statsbytype <idSesion>"""
+        check_environment()
+        if not line:
+            all_sessions=True
+        else:   
+            all_sessions=False
+        cursor = config.oracleCon.cursor()
+        # Metemos en una lista todos los tipos de mounts que hay, viene dado
+        # por el diccionario config.MOUNTS en el campo fs
+        mount_types = []
+        for mount in config.MOUNTS:
+            mount_types.append(mount['fs'])
+        if config.DEBUG:
+            debug("DEBUG-INFO: (do_statsbytype) mount_types: ",mount_types)
+        #Seleccionamos mediante Q_STATS_BY_TYPE el total de ficheros y el total de tamaño
+        # para cada mount_type
+        for mount_type in mount_types:
+            mount_type_like = '%'+mount_type+'%'
+            if not all_sessions:
+                query = config.Q_STATS_BY_TYPE % (line, comillas(mount_type_like))
+            else:
+                query = config.Q_STATS_BY_TYPE_ALL % (comillas(mount_type_like))
+            cursor.execute(query)
+            nficheros, nsize = cursor.fetchone()
+            print "{:<10} {:<15} {:<15} {:>15}".format("Tipo:", mount_type, "Ficheros:", nficheros)
+            print "{:<10} {:<15} {:<15} {:>15}".format("", "", "Tamaño  :", size_to_human(nsize).strip())
+            print "{:<10} {:<15} {:<15} {:>15}".format("", "", "Tam/fich:", size_to_human(nsize/nficheros).strip())
+        cursor.close()
 
     @staticmethod
     def do_stats(line):
@@ -831,6 +902,7 @@ class Shell(cmd.Cmd):
 
         checkaltusers [-f tofile ] [-x directorio] <directorio>
         """
+        #TODO: ¿Estamos usando tofile?
 
         fnosigunoldap = open("/tmp/ckaltusers_nosigunoldap","w")
         fnosigusildap = open("/tmp/ckaltusers_nosigusildap","w")
