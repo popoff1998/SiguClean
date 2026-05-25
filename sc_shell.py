@@ -10,6 +10,7 @@ import cmd
 import ast
 from pprint import pprint
 import datetime
+import re
 
 import config
 from sc_funcs import *
@@ -1096,6 +1097,31 @@ class Shell(cmd.Cmd):
 
         #Comprobaciones previas
         rows = self.do_arcinfo(user + " " + sesion + " -s")
+
+        # Aplicar exclusiones globales definidas en config.UNARCHIVE_EXCLUDE
+        try:
+            patterns = getattr(config, 'UNARCHIVE_EXCLUDE', [])
+            if patterns and rows:
+                compiled = [re.compile(p) for p in patterns]
+                filtered = []
+                for row in rows:
+                    try:
+                        ttar = row[2]
+                    except Exception:
+                        ttar = ''
+                    skip = False
+                    for cre in compiled:
+                        if cre.search(ttar):
+                            skip = True
+                            if config.DEBUG:
+                                debug("DEBUG-INFO: Excluyendo tar %s por UNARCHIVE_EXCLUDE %s" % (ttar, cre.pattern))
+                            break
+                    if not skip:
+                        filtered.append(row)
+                rows = filtered
+        except BaseException as error:
+            print("Error aplicando UNARCHIVE_EXCLUDE: ", error)
+            return
 
         if not rows:
             print("No hay nada que desarchivar")

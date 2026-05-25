@@ -49,7 +49,7 @@ class Status(object):
         exec("self.%s = %s" % (field,val))
 
 # Defines (globales)
-__version__ = "1.1.3"
+__version__ = "2.0.1"
 TEST = False
 ONESHOT = False
 DEBUG = False
@@ -125,6 +125,18 @@ fAllOutput = None
 
 # Filtro de exclusion de montajes, lo inicializamos como algo imposible de cumplir
 MOUNT_EXCLUDE = "(?=a)b"
+
+# Lista global de patrones (regex) para excluir determinados archivados
+# de la operación de `unarchive`. Cada patrón se aplica sobre el campo
+# `TTAR` (el nombre del tar almacenado en la BBDD). POR PRECaucIÓN, usa
+# patrones que busquen los delimitadores `@` alrededor del campo `key`
+# para evitar excluir por substring (p.ej. `perfilesv2`). Ejemplos:
+#   - Excluir exactamente el storage `perfiles`: r'@perfiles@'
+#   - Excluir dummies: r'^dummy'
+#   - Excluir cualquier tar que venga de `homecifs`: r'@homecifs@'
+# Por defecto incluimos un ejemplo para excluir `perfiles` sin afectar
+# a `perfilesv2`. Modifica o borra esta lista según necesites.
+UNARCHIVE_EXCLUDE = [r'@perfiles@']
 
 #state = Enum('NA', 'ARCHIVED', 'DELETED', 'TARFAIL', 'NOACCESIBLE', 'ROLLBACK', 'ERROR', 'DELETEERROR', 'UNARCHIVED',
 #             'NOTARCHIVABLE','LINKERROR')

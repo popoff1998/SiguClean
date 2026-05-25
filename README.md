@@ -2,8 +2,17 @@ SiguClean - Python 3.9 (Rocky Linux 9.3)
 =========================================
 
 **Estado: ✓ Migrado a Python 3.9 - Completamente funcional en Rocky Linux 9.3**
-
+ 
 SiguClean es una utilidad para archivar los espacios de almacenamiento asociados a una cuenta de usuario de sigu.
+
+Documentación
+-------------
+
+- **[ESTADO.md](ESTADO.md)** - Estado completo del proyecto
+- **[CHECKLIST.md](CHECKLIST.md)** - Checklist de verificación
+- **[INSTALAR_RAPIDO.md](INSTALAR_RAPIDO.md)** - Guía rápida
+- **[ROCKY_LINUX_9_ORACLE.md](ROCKY_LINUX_9_ORACLE.md)** - Guía Rocky Linux
+- **[requirements.txt](requirements.txt)** - Dependencias Python
 
 Inicio Rápido
 -------------
@@ -19,8 +28,41 @@ bash /opt/siguclean/run_siguclean.sh tu_contraseña
 python3 /opt/siguclean/siguclean.py -i --sigu-password tu_contraseña
 ```
 
-Novedades en esta versión (Python 3.9)
---------------------------------------
+Novedades 2.0.1
+---------------
+
+#### General
+* Añadida exclusión global de archivados para `unarchive` mediante la
+    variable `UNARCHIVE_EXCLUDE` en `config.py`. Esta variable es una lista
+    de patrones regex que se aplican sobre el campo `TTAR` (el nombre del
+    tar almacenado en la BBDD) para omitir determinados tars al ejecutar
+    `unarchive` desde la shell.
+
+#### Implementación
+* Archivo: `config.py` — nueva variable `UNARCHIVE_EXCLUDE` (lista de
+    patrones). Por defecto incluye el patrón para excluir exactamente el
+    storage `perfiles` (`@perfiles@`).
+* Archivo: `sc_shell.py` — `do_unarchive` aplica el filtrado de
+    `UNARCHIVE_EXCLUDE` antes de desarchivar las entradas devueltas por
+    `arcinfo`. Si `config.DEBUG` está activado, se registra qué tars se
+    excluyen y por qué patrón.
+
+#### Uso / Configuración
+* Editar `UNARCHIVE_EXCLUDE` en `config.py` para añadir o quitar
+    exclusiones. Los patrones son expresiones regulares aplicadas con
+    `re.search()` sobre `TTAR`. Ejemplos seguros:
+    - Excluir exactamente `perfiles`: `r'@perfiles@'`
+    - Excluir dummies: `r'^dummy'`
+    - Excluir por usuario (prefijo): `r'^juanperez@'`
+* Evitar patrones genéricos que coincidan por substring (p. ej. usar
+    `@perfiles@` en vez de `perfiles`) para no afectar a claves como
+    `perfilesv2`.
+
+*Nota:* Si ocurre un error aplicando las regex, `do_unarchive` abortará
+la operación para evitar efectos inesperados.
+
+Novedades 2.0.0
+---------------
 
 * ✓ Migración completa de Python 2.7 a Python 3.9
 * ✓ Todas las dependencias actualizadas y verificadas
@@ -28,15 +70,6 @@ Novedades en esta versión (Python 3.9)
 * ✓ Mejor manejo de errores en conexión Oracle
 * ✓ Scripts de diagnóstico y verificación incluidos
 * ✓ Documentación completa para Rocky Linux 9.3
-
-Documentación
--------------
-
-- **[ESTADO.md](ESTADO.md)** - Estado completo del proyecto
-- **[CHECKLIST.md](CHECKLIST.md)** - Checklist de verificación
-- **[INSTALAR_RAPIDO.md](INSTALAR_RAPIDO.md)** - Guía rápida
-- **[ROCKY_LINUX_9_ORACLE.md](ROCKY_LINUX_9_ORACLE.md)** - Guía Rocky Linux
-- **[requirements.txt](requirements.txt)** - Dependencias Python
 
 Novedades 1.1.4
 ---------------
