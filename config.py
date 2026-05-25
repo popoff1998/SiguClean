@@ -27,7 +27,7 @@ class Status(object):
     def show(self):
         "Imprime todos los checks"
         for field in self._fields_:
-            print field," = ",eval("self.%s" % (field))
+            print(field," = ",eval("self.%s" % (field)))
 
     def ok(self):
         "Evalua si todos los checks mandatory son correctos"
@@ -128,7 +128,7 @@ MOUNT_EXCLUDE = "(?=a)b"
 
 #state = Enum('NA', 'ARCHIVED', 'DELETED', 'TARFAIL', 'NOACCESIBLE', 'ROLLBACK', 'ERROR', 'DELETEERROR', 'UNARCHIVED',
 #             'NOTARCHIVABLE','LINKERROR')
-reason = Enum('NOTINLDAP', 'NOMANDATORY', "FAILARCHIVE", "FAILDELETE", "FAILARCHIVEDN", "FAILDELETEDN", 'UNKNOWN', "ISARCHIVED", "UNKNOWNARCHIVED", "NODNINAD", "EXPLICITEXCLUDED", "INSERTBBDDSTORAGE", "NOTALLSERVICESOFF", "NOTARCHIVABLE")
+reason = Enum('reason', 'NOTINLDAP NOMANDATORY FAILARCHIVE FAILDELETE FAILARCHIVEDN FAILDELETEDN UNKNOWN ISARCHIVED UNKNOWNARCHIVED NODNINAD EXPLICITEXCLUDED INSERTBBDDSTORAGE NOTALLSERVICESOFF NOTARCHIVABLE')
 
 CADUCADO = '3'
 CANCELADO = '6'

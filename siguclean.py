@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
 Created on Mon May 20 09:09:42 2013
@@ -131,11 +131,12 @@ for var in args.__dict__:
 
 #os._exit(True)
 if args.interactive:
+    check_environment()
     Shell().cmdloop()
     os._exit(True)
 
 if args.version:
-    print __version__
+    print(__version__)
     os._exit(True)
 
 if config.COUNTRUN:
@@ -163,7 +164,7 @@ sesion = None
 
 try:
     sesion = Session(config.sessionId, config.fromDate, config.toDate,"MAIN")
-except BaseException, e:
+except BaseException as e:
     _print(0, 'ABORT: Error en la creación de la sesion')
     _print(0, "ERROR: ", e)
     os._exit(False)

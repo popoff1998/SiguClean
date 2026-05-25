@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
 Created on Mon May 20 09:09:42 2013
@@ -24,8 +24,7 @@ from sc_log   import *
 
 
 #Clases Enum
-state = Enum('NA', 'ARCHIVED', 'DELETED', 'DUMMY', 'MANUALDELETE', 'TARFAIL', 'NOACCESIBLE', 'ROLLBACK', 'ERROR', 'DELETEERROR', 'UNARCHIVED',
-             'NOTARCHIVABLE','LINKERROR')
+state = Enum('state', 'NA ARCHIVED DELETED DUMMY MANUALDELETE TARFAIL NOACCESIBLE ROLLBACK ERROR DELETEERROR UNARCHIVED NOTARCHIVABLE LINKERROR')
 
 
 class Session(object):
@@ -74,7 +73,7 @@ class Session(object):
             if self.sessionId:
                 self.tardir = config.TARDIR + '/' + self.sessionId
             if not os.path.isdir(self.tardir):
-                os.mkdir(self.tardir, 0777)
+                os.mkdir(self.tardir, 0o777)
         else:
             # Abortamos porque no existe el directorio padre de los tars
             _print(0, 'ABORT: (session-start) No existe el directorio para tars: ', config.TARDIR)
@@ -121,7 +120,7 @@ class Session(object):
                     # Leemos los usuarios quitando el \n final
                     self.excludeuserslist.extend([line.strip() for line in _f])
                     _f.close()
-                except BaseException, error:
+                except BaseException as error:
                     if config.DEBUG:
                         debug("Error leyendo EXCLUDEUSERSFILE: ", error)
                     _print(0, "Error leyendo EXCLUDEUSERSFILE: ", config.FROMFILE)
@@ -143,7 +142,7 @@ class Session(object):
                     not s.startswith("logs") and not s.startswith("consolidatelogs") and os.path.isdir(
                         self.tardir + "/" + s))]
                 return True
-            except BaseException, error:
+            except BaseException as error:
                 _print(0, "ABORT: No puedo recuperar la lista de usuarios previamente archivados")
                 _print(0, "ERROR: ", error)
                 return False
@@ -160,7 +159,7 @@ class Session(object):
             cursor.execute(qgetidsesion % comillas(self.sessionId))
             self.idsesion = fetch_single(cursor)
             cursor.close()
-        except BaseException, error:
+        except BaseException as error:
             _print(0, "ERROR: Recuperando id de sesion ", self.sessionId)
             _print(0, "ERROR: ", error)
             return False
@@ -197,19 +196,19 @@ class Session(object):
             return
 
         usersdonedict, lineas = self.logdict(logs_dirs, 'users.done')
-        print "Lineas: ", lineas, " DoneDict: ", len(usersdonedict)
+        print("Lineas: ", lineas, " DoneDict: ", len(usersdonedict))
 
         usersfaileddict, lineas = self.logdict(logs_dirs, 'users.failed')
-        print "Lineas: ", lineas, " FailedDict: ", len(usersfaileddict)
+        print("Lineas: ", lineas, " FailedDict: ", len(usersfaileddict))
 
         userslistdict, lineas = self.logdict(logs_dirs, 'users.list')
-        print "Lineas: ", lineas, " ListDict: ", len(userslistdict)
+        print("Lineas: ", lineas, " ListDict: ", len(userslistdict))
 
         usersrollbackdict, lineas = self.logdict(logs_dirs, 'users.rollback')
-        print "Lineas: ", lineas, " RollbackDict: ", len(usersrollbackdict)
+        print("Lineas: ", lineas, " RollbackDict: ", len(usersrollbackdict))
 
         ppp = set(usersrollbackdict).difference(set(usersdonedict))
-        print "DifRollbackLen: ", len(ppp)
+        print("DifRollbackLen: ", len(ppp))
         return
 
     def consolidate_fs(self, fs):
@@ -240,7 +239,7 @@ class Session(object):
         # Abrimos el cursor
         try:
             cursor = config.oracleCon.cursor()
-        except BaseException, error:
+        except BaseException as error:
             _print(0, "ABORT: ConsolidateFs, Error abriendo cursor de oracle")
             _print(0, "ERROR: ",error)
             os._exit(False)
@@ -272,7 +271,7 @@ class Session(object):
                         self.log.write_bbdd(updateq + "\n")
                         cursor.execute(updateq)
                         self.log.write_rename_done(origen + ' ' + destino)
-                    except BaseException, error:
+                    except BaseException as error:
                         _print(0, "ERROR: Haciendo update, error: ", error, " file: ", origen)
                         # deshago el renombrado
                         os.rename(destino, origen)
@@ -286,7 +285,7 @@ class Session(object):
                     _print(0, "INFO: Renombrando ", origen, " ---> ", destino)
                     _print(0, "INFO: UpdateQ= ", updateq)
                     self.log.write_rename_done(origen + ' ' + destino)
-            except BaseException, error:
+            except BaseException as error:
                 _print(0, "ERROR: Renombrando ", origen, " a ", destino)
                 _print(0, "ERROR: ", error)
 
@@ -469,7 +468,7 @@ class Session(object):
                 # Salvamos en idsesion para restoring
                 if config.DEBUG:
                     debug("DEBUG-INFO: (session-bbdd_insert) salvando idsesion: ", self.idsesion)
-            except BaseException, error:
+            except BaseException as error:
                 _print(0, "ERROR: Almacenando en la BBDD sesion ", self.sessionId)
                 if config.DEBUG:
                     debug("DEBUG-ERROR: (sesion.bbdd_insert) Error: ", error)
@@ -495,7 +494,7 @@ class Session(object):
         pbar = None
         if config.DEBUG:
             debug('DEBUG-INFO: (session.start) TARDIR es: ', config.TARDIR)
-        print "VERBOSE: ", config.VERBOSE, "DEBUG: ", config.DEBUG, "PROGRESS: ", config.PROGRESS
+        print("VERBOSE: ", config.VERBOSE, "DEBUG: ", config.DEBUG, "PROGRESS: ", config.PROGRESS)
         if have_progress():
             pbar = ProgressBar(widgets=[Percentage(), " ", Bar(marker=RotatingMarker()), " ", ETA()],
                                maxval=1000000).start()
@@ -597,10 +596,10 @@ class Session(object):
                     continue
             # BORRAR: COMPROBACION DE STORAGES
             if not config.PROGRESS:
-                print "*** STORAGES DE ", user.cuenta
+                print("*** STORAGES DE ", user.cuenta)
                 for st in user.storage:
                     st.display()
-                print "************************"
+                print("************************")
             # ... Archivamos ...
             if not user.archive(self.tardir):
                 _print(0, "ERROR: Archivando usuario ", user.cuenta)
@@ -757,7 +756,7 @@ class Storage(object):
             self.tarsize = os.path.getsize(self.tarpath)
             self.state = state.ARCHIVED
             return True
-        except BaseException, error:
+        except BaseException as error:
             _print(0, "ERROR: Archivando ", self.key)
             if config.DEBUG:
                 debug("DEBUG-ERROR: ", error)
@@ -786,7 +785,7 @@ class Storage(object):
                 # oracleCon.commit()
                 # cursor.close()
                 return True
-            except BaseException, error:
+            except BaseException as error:
                 _print(0, "ERROR: Almacenando en la BBDD storage ", self.key)
                 if config.DEBUG:
                     debug("DEBUG-ERROR: (storage.bbdd_insert) Error: ", error)
@@ -817,7 +816,7 @@ class Storage(object):
                 os.remove(self.link)
             self.state = state.DELETED
             return True
-        except BaseException, error:
+        except BaseException as error:
             if config.DEBUG:
                 debug("DEBUG-ERROR: Borrando ", self.path, " : ", error)
             if config.MANUALDELETE:
@@ -850,7 +849,7 @@ class Storage(object):
                 if not config.DRYRUN:
                     try:
                         os.link(self.path, self.link)
-                    except BaseException, error:
+                    except BaseException as error:
                         if config.DEBUG:
                             debug("DEBUG_ERROR: Restableciendo link ", self.link, " a ",self.path," : ", error)
                         self.state = state.LINKERROR
@@ -1037,7 +1036,7 @@ class User(object):
             _ = self.cuenta
             if config.DEBUG:
                 debug("DEBUG-WARNING: (user.__init__) YA EXISTIA USUARIO ", self.cuenta, " VUELVO DE INIT")
-                print "CUENTA: ",self.cuenta
+                print("CUENTA: ",self.cuenta)
             #Actualmente comento el siguiente return porque dentro de la shell interactiva no me funciona bien si retorno sin inicializar las
             #variables de nuevo. De hecho con do_storage se me va añadiendo el utimo storage repetido cada vez que llamo al metodo con el mismo
             #usuario.
@@ -1122,7 +1121,7 @@ class User(object):
         if config.TRACE:
             traceprint(self.__class__.__name__+":"+current_func(),self.parent.__class__.__name__+":"+current_parent())
 
-        print "__DEL__ BORRANDO ",self
+        print("__DEL__ BORRANDO ", self)
     """
 
     def __new__(cls, name, parent):
@@ -1144,10 +1143,10 @@ class User(object):
 
         # es archivable? Si no tiene todos los servicios a off, aun caducado o cancelado no debemos procesarlo
         if not config.PROGRESS and config.EXTRADEBUG:
-            print "ESTADO USUARIO: ", self.cEstado
-            print "MRELAX: ", config.MANDATORYRELAX, "TIPO: ", type(config.MANDATORYRELAX)
-            print "CANCELADO ES: ", config.CANCELADO
-            print "mRelax.TODOS: ", config.Mrelax.TODOS
+            print("ESTADO USUARIO: ", self.cEstado)
+            print("MRELAX: ", config.MANDATORYRELAX, "TIPO: ", type(config.MANDATORYRELAX))
+            print("CANCELADO ES: ", config.CANCELADO)
+            print("mRelax.TODOS: ", config.Mrelax.TODOS)
 
         if not all_services_off(self.cuenta) and not config.BYPASS:
             self.exclude = True
@@ -1324,7 +1323,7 @@ class User(object):
             #Precaución adicional si dryrun o softrun. En estos casos no hace falta desarchivar
             if not config.DRYRUN:
                 rmtree(self.rootpath)
-        except BaseException, error:
+        except BaseException as error:
             _print(0, "ABORT: Error borrando rootpath: ", self.rootpath, " error: ", error)
             os._exit(False)
         _print(2, "*** ROLLBACK OK *** ", self.cuenta)
@@ -1341,7 +1340,7 @@ class User(object):
         self.rootpath = tardir + '/' + self.cuenta
         if not os.path.isdir(self.rootpath):
             if not config.DRYNOWRITE:
-                os.mkdir(self.rootpath, 0777)
+                os.mkdir(self.rootpath, 0o777)
 
     def unarchive(self, tardir):
         """Este metodo es useless pues debe rellenar los storages primero"""
@@ -1435,7 +1434,7 @@ class User(object):
             pickle.dump(self.adObject, ad_file)
             ad_file.close()
             return True
-        except BaseException, error:
+        except BaseException as error:
             self.failreason = format_reason(self.cuenta, config.reason.FAILARCHIVEDN, self.dn, self.parent.stats)
             debug("DEBUG-INFO: (archive_dn) error ",error)
             return False
@@ -1467,10 +1466,10 @@ class User(object):
                     try:
                         config.ldapCon.delete_s(self.dn)
                         return True
-                    except ldap.LDAPError, error:
+                    except ldap.LDAPError as error:
                         _print(0, "Error borrando DN usuario despues de reconexion ", self.cuenta, " ", error)
                         self.failreason = format_reason(self.cuenta, config.reason.FAILDELETEDN, self.dn, self.parent.stats)
-            except ldap.LDAPError, error:
+            except ldap.LDAPError as error:
                 _print(0, "Error borrando DN usuario ", self.cuenta, " ", error)
                 self.failreason = format_reason(self.cuenta, config.reason.FAILDELETEDN, self.dn, self.parent.stats)
             return False
@@ -1510,7 +1509,7 @@ class User(object):
                     config.ldapCon.add_s(dn, attrs)
                 ad_file.close()
                 return True
-            except ldap.LDAPError, error:
+            except ldap.LDAPError as error:
                 _print(0, error)
                 return False
 

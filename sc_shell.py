@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
 Created on Mon May 20 09:09:42 2013
@@ -55,7 +55,7 @@ class Shell(cmd.Cmd):
         for item in line.split():
             if item.startswith('-'):
                 if item not in valid_options:
-                    print "Argumento ",item," inválido"
+                    print("Argumento ",item," inválido")
                     return None,None
                 args.append(item)
             else:
@@ -87,18 +87,18 @@ class Shell(cmd.Cmd):
             userlist = []
             ret = from_file(userlist)
             if not ret:
-                print "Error recuperando la cuenta de usuarios de ", config.FROMFILE
+                print("Error recuperando la cuenta de usuarios de ", config.FROMFILE)
             else:
-                print "Usuarios de ", config.FROMFILE, " archivables = ", len(userlist)
+                print("Usuarios de ", config.FROMFILE, " archivables = ", len(userlist))
             return
         else:
             try:
                 _fromDate, _toDate = self.parse(line)
                 userlist = get_list_by_date(_toDate, _fromDate)
-            except BaseException, error:
-                print "Error recuperando la cuenta de usuarios de SIGU: ", error
+            except BaseException as error:
+                print("Error recuperando la cuenta de usuarios de SIGU: ", error)
                 return
-            print "Usuarios archivables entre ", _fromDate, " y ", _toDate, " = ", len(userlist)
+            print("Usuarios archivables entre ", _fromDate, " y ", _toDate, " = ", len(userlist))
 
     def do_storages(self,line):
         """
@@ -132,19 +132,19 @@ class Shell(cmd.Cmd):
             user = User(account,self)
             user.check()
             if not user.cEstado:
-                print account," no existe"
+                print(account," no existe")
                 del user
                 continue
             accesible_storages = user.accesible_storages()
 
             if accesible_storages > 0:
                 if '-l' not in args:
-                    print account,"\t",accesible_storages
+                    print(account,"\t",accesible_storages)
                 else:
                         display_table(header,user.get_storage_list())
-                        print "\n"
+                        print("\n")
             else:
-                print account," no tiene storages"
+                print(account," no tiene storages")
             del user
             gc.collect()
         try:
@@ -181,39 +181,39 @@ class Shell(cmd.Cmd):
         config.LDAPRELAX = True
 
         args,line = self.parse_line(line,('-f'))
-        if 'p' in args.keys():
+        if 'p' in list(args.keys()):
             config.PROGRESS = True
-        if 'f' in args.keys():
+        if 'f' in list(args.keys()):
             #leemos tofile despues de la opcion -f
             tofile = args['f']
             if tofile is None:
-                print "Falta el nombre del fichero"
+                print("Falta el nombre del fichero")
                 return
             #Abrimos tofile
             try:
                 tofile = open(tofile,"w",0)
-            except IOError, error:
-                print "Error abriendo ",tofile,": ",error
+            except IOError as error:
+                print("Error abriendo ",tofile,": ",error)
                 return
 
         if config.FROMFILE is not None:
             userlist = []
             ret = from_file(userlist)
             if not ret:
-                print "Error recuperando la cuenta de usuarios de ", config.FROMFILE
+                print("Error recuperando la cuenta de usuarios de ", config.FROMFILE)
                 return
             else:
-                print "Usuarios de ", config.FROMFILE, " = ", len(userlist)
+                print("Usuarios de ", config.FROMFILE, " = ", len(userlist))
         else:
             try:
                 #_fromDate, _toDate = self.parse(line)
                 _fromDate = line[0]
                 _toDate = line[1]
                 userlist = get_archived_by_date(_toDate, _fromDate)
-            except BaseException, error:
-                print "Error recuperando la cuenta de usuarios de SIGU: ", error
+            except BaseException as error:
+                print("Error recuperando la cuenta de usuarios de SIGU: ", error)
                 return
-            print "Usuarios archivados entre ", _fromDate, " y ", _toDate, " = ", len(userlist)
+            print("Usuarios archivados entre ", _fromDate, " y ", _toDate, " = ", len(userlist))
 
         if len(userlist) == 0:
             return
@@ -238,13 +238,13 @@ class Shell(cmd.Cmd):
             if user_storages > 0:
                 _str = "USER: "+account+" ACCESIBLE_STORAGES: "+str(user_storages)+" "+str(user_storages_list)+"\n"
                 if have_progress():
-                    if 'f' in args.keys():
+                    if 'f' in list(args.keys()):
                         tofile.write(_str)
                 else:
-                    if 'f' in args.keys():
+                    if 'f' in list(args.keys()):
                         tofile.write(_str)
                     else:
-                        print _str
+                        print(_str)
 
     @staticmethod
     def do_isarchived(line):
@@ -256,9 +256,9 @@ class Shell(cmd.Cmd):
         check_environment()
 
         try:
-            print is_archived(line)
-        except BaseException, error:
-            print "Error recuperando el estado de archivado", error
+            print(is_archived(line))
+        except BaseException as error:
+            print("Error recuperando el estado de archivado", error)
 
     @staticmethod
     def do_hasarchiveddata(line):
@@ -270,10 +270,10 @@ class Shell(cmd.Cmd):
         try:
             config.WINDOWS_PASS = "dummy"
             check_environment()
-            print "ISARCHIVED: ", is_archived(line)
-            print "HASARCHIVEDDATA", has_archived_data(line)
-        except BaseException, error:
-            print "Error recuperando los datos de archivado", error
+            print("ISARCHIVED: ", is_archived(line))
+            print("HASARCHIVEDDATA", has_archived_data(line))
+        except BaseException as error:
+            print("Error recuperando los datos de archivado", error)
 
     @staticmethod
     def do_hascuentant(line):
@@ -287,9 +287,9 @@ class Shell(cmd.Cmd):
             if config.NTCHECK == 'sigu':
                 config.WINDOWS_PASS = 'dummy'
             check_environment()
-            print has_cuenta_nt(line), " (metodo ", config.NTCHECK, ")"
-        except BaseException, error:
-            print "Error comprobando si ", line, " tiene cuenta NT", error
+            print(has_cuenta_nt(line), " (metodo ", config.NTCHECK, ")")
+        except BaseException as error:
+            print("Error comprobando si ", line, " tiene cuenta NT", error)
 
     def do_ldapquery(self, line):
         """
@@ -301,9 +301,9 @@ class Shell(cmd.Cmd):
             check_environment()
             user, attr = self.parse(line)
             ret = ldap_from_sigu(user, attr)
-            print ret
-        except BaseException, error:
-            print "Error consultando atributo ldap", error
+            print(ret)
+        except BaseException as error:
+            print("Error consultando atributo ldap", error)
 
     @staticmethod
     def do_schacquery(line):
@@ -312,7 +312,7 @@ class Shell(cmd.Cmd):
         config.WINDOWS_PASS = "dummy"
         check_environment()
         ret = scha_from_ldap(line)
-        print ret
+        print(ret)
 
     @staticmethod
     def do_allservicesoff(line):
@@ -320,7 +320,7 @@ class Shell(cmd.Cmd):
         allservicesoff <usuario>"""
         config.WINDOWS_PASS = "dummy"
         check_environment()
-        print all_services_off(line)
+        print(all_services_off(line))
 
     def do_advsarchived(self, line):
         """
@@ -346,8 +346,8 @@ class Shell(cmd.Cmd):
                 _fromDate = line[0]
                 _toDate = line[1]
             userlist = get_archived_by_date(_toDate, _fromDate)
-        except BaseException, error:
-            print "Error recuperando lista de usuarios archivados de SIGU: ", error
+        except BaseException as error:
+            print("Error recuperando lista de usuarios archivados de SIGU: ", error)
             return
 
         config.NTCHECK = 'ad'
@@ -355,15 +355,15 @@ class Shell(cmd.Cmd):
         # noinspection PyTypeChecker
         for user in userlist:
             if has_cuenta_nt(user):
-                print user,
+                print(user, end=' ')
                 if '-l' in args:
                     _status, dn, tupla, result_type = dn_from_user(user)
-                    print "\t",dn
+                    print("\t",dn)
                 else:
-                    print
+                    print()
                 contador += 1
-        print "Usuarios archivados entre ", _fromDate, " y ", _toDate, " = ", len(userlist)
-        print "Usuarios archivados que aun tienen cuenta AD: ", contador
+        print("Usuarios archivados entre ", _fromDate, " y ", _toDate, " = ", len(userlist))
+        print("Usuarios archivados que aun tienen cuenta AD: ", contador)
 
     def do_archived(self, line):
         """
@@ -382,14 +382,14 @@ class Shell(cmd.Cmd):
             else:
                 _fromDate, _toDate = self.parse(line)
             userlist = get_archived_by_date(_toDate, _fromDate)
-        except BaseException, error:
-            print "Error recuperando lista de usuarios archivados de SIGU: ", error
+        except BaseException as error:
+            print("Error recuperando lista de usuarios archivados de SIGU: ", error)
             return
 
-        print "Usuarios archivados entre ", _fromDate, " y ", _toDate, " = ", len(userlist)
+        print("Usuarios archivados entre ", _fromDate, " y ", _toDate, " = ", len(userlist))
         # noinspection PyTypeChecker
         for user in userlist:
-            print user
+            print(user)
 
     def do_unarchived(self, line):
         """
@@ -408,9 +408,9 @@ class Shell(cmd.Cmd):
             userlist = []
             ret = from_file(userlist)
             if not ret:
-                print "Error recuperando la cuenta de usuarios de ", config.FROMFILE
+                print("Error recuperando la cuenta de usuarios de ", config.FROMFILE)
             else:
-                print "Usuarios de ", config.FROMFILE, " archivables = ", len(userlist)
+                print("Usuarios de ", config.FROMFILE, " archivables = ", len(userlist))
             return
         else:
             try:
@@ -420,8 +420,8 @@ class Shell(cmd.Cmd):
                 else:
                     _fromDate, _toDate = self.parse(line)
                 userlist = get_unarchived_by_date(_toDate, _fromDate)
-            except BaseException, error:
-                print "Error recuperando lista de usuarios no archivados de SIGU: ", error
+            except BaseException as error:
+                print("Error recuperando lista de usuarios no archivados de SIGU: ", error)
                 return
 
         if '-c' in args:
@@ -432,10 +432,10 @@ class Shell(cmd.Cmd):
                     userlist.remove(user)
             config.CHECKARCHIVEDDATA = _tmp
 
-        print "Usuarios no archivados entre ", _fromDate, " y ", _toDate, " = ", len(userlist)
+        print("Usuarios no archivados entre ", _fromDate, " y ", _toDate, " = ", len(userlist))
         # noinspection PyTypeChecker
         for user in userlist:
-            print user
+            print(user)
             if config.TOFILEHANDLE:
                 try:
                     write_tofile(user)
@@ -453,7 +453,7 @@ class Shell(cmd.Cmd):
         """ Muestra si un usuario esta expirado
         isexpired <usuario>"""
         check_environment()
-        print is_expired(line)
+        print(is_expired(line))
 
     @staticmethod
 
@@ -488,9 +488,9 @@ class Shell(cmd.Cmd):
                 query = config.Q_STATS_BY_TYPE_ALL % (comillas(mount_type_like))
             cursor.execute(query)
             nficheros, nsize = cursor.fetchone()
-            print "{:<10} {:<15} {:<15} {:>15}".format("Tipo:", mount_type, "Ficheros:", nficheros)
-            print "{:<10} {:<15} {:<15} {:>15}".format("", "", "Tamaño  :", size_to_human(nsize).strip())
-            print "{:<10} {:<15} {:<15} {:>15}".format("", "", "Tam/fich:", size_to_human(nsize/nficheros).strip())
+            print("{:<10} {:<15} {:<15} {:>15}".format("Tipo:", mount_type, "Ficheros:", nficheros))
+            print("{:<10} {:<15} {:<15} {:>15}".format("", "", "Tamaño  :", size_to_human(nsize).strip()))
+            print("{:<10} {:<15} {:<15} {:>15}".format("", "", "Tam/fich:", size_to_human(nsize/nficheros).strip()))
         cursor.close()
 
     @staticmethod
@@ -504,6 +504,12 @@ class Shell(cmd.Cmd):
         sesiones = []
         _ = line
         check_environment()
+        
+        # Verificar que la conexión a Oracle está disponible
+        if config.oracleCon is None:
+            print("ERROR: No hay conexión a Oracle. Verifique credenciales y disponibilidad del servidor.")
+            return
+        
         if not line:
             cursor = config.oracleCon.cursor()
             cursor.execute("select sum(nficheros) from ut_st_storage")
@@ -529,22 +535,22 @@ class Shell(cmd.Cmd):
             compresion = 100-((nsize*100)/float(nsize_original))
             espaciobyusuario = nsize_original/narchivados
 
-            print "\n"
-            print "*********************************"
-            print "*** ESTADISTICAS DE SIGUCLEAN ***"
-            print "*********************************"
-            print "\n"
-            print "Sesiones:\t", nsesiones
-            print "Archivados:\t", narchivados
-            print "Numero tars:\t", ntars
-            print "Ficheros:\t", nficheros
-            print "Tamaño Orig:\t", size_to_human(nsize_original)
-            print "Tamaño Arch:\t", size_to_human(nsize)
-            print "Tasa Compresion\t",'%.2f' % compresion,"%"
-            print "Tamaño/user\t",size_to_human(espaciobyusuario)
-            print "Max ficheros:\t", maxficheros, "(", cuenta_maxficheros, ")"
-            print "Max tamaño:\t", size_to_human(maxsize_orig), "(", cuenta_maxsize_orig, ")"
-            print "\n"
+            print("\n")
+            print("*********************************")
+            print("*** ESTADISTICAS DE SIGUCLEAN ***")
+            print("*********************************")
+            print("\n")
+            print("Sesiones:\t", nsesiones)
+            print("Archivados:\t", narchivados)
+            print("Numero tars:\t", ntars)
+            print("Ficheros:\t", nficheros)
+            print("Tamaño Orig:\t", size_to_human(nsize_original))
+            print("Tamaño Arch:\t", size_to_human(nsize))
+            print("Tasa Compresion\t",'%.2f' % compresion,"%")
+            print("Tamaño/user\t",size_to_human(espaciobyusuario))
+            print("Max ficheros:\t", maxficheros, "(", cuenta_maxficheros, ")")
+            print("Max tamaño:\t", size_to_human(maxsize_orig), "(", cuenta_maxsize_orig, ")")
+            print("\n")
         else:
             if line == "*":
                 try:
@@ -553,7 +559,7 @@ class Shell(cmd.Cmd):
                     sesiones = cursor.fetchall()
                     cursor.close()
                 except:
-                    print "Error recuperando todas las sesiones"
+                    print("Error recuperando todas las sesiones")
                     cursor.close()
                     return
             elif not line.isdigit():
@@ -563,13 +569,13 @@ class Shell(cmd.Cmd):
                     cursor.execute("select IDSESION from ut_st_sesion where DSESION = '" + line + "'")
                     sesiones = cursor.fetchall()
                     cursor.close()
-                except BaseException, error:
-                    print "Error recuperando sesion", line
-                    print "ERROR: ", error
+                except BaseException as error:
+                    print("Error recuperando sesion", line)
+                    print("ERROR: ", error)
                     cursor.close()
                     return
                 if not sesiones:
-                    print "Error la sesion ",line," no existe"
+                    print("Error la sesion ",line," no existe")
             else:
                 #El argumento es un numero de sesion
                 sesiones.append((int(line),))
@@ -599,27 +605,27 @@ class Shell(cmd.Cmd):
                     cursor.execute("select nsize_original,ccuenta from ut_st_storage where nsize_original = \
                                    (select max(nsize_original) from ut_st_storage where IDSESION="+ str(sesion)+")")
                     maxsize_orig, cuenta_maxsize_orig = fetch_single(cursor)
-                except BaseException, error:
-                    print "Error recuperando información de la sesión ",sesion
-                    print "ERROR: ", error
+                except BaseException as error:
+                    print("Error recuperando información de la sesión ",sesion)
+                    print("ERROR: ", error)
                     return
 
                 compresion = 100-((nsize*100)/float(nsize_original))
                 espaciobyusuario = nsize_original/narchivados
 
-                print "\n"
-                print "Sesión:\t\t", sesion
-                print "Descripción\t", descripcion
-                print "Archivados:\t", narchivados
-                print "Numero tars:\t", ntars
-                print "Ficheros:\t", nficheros
-                print "Tamaño Orig:\t", size_to_human(nsize_original)
-                print "Tamaño Arch:\t", size_to_human(nsize)
-                print "Tasa Compresion\t",'%.2f' % compresion,"%"
-                print "Tamaño/user\t",size_to_human(espaciobyusuario)
-                print "Max ficheros:\t", maxficheros, "(", cuenta_maxficheros, ")"
-                print "Max tamaño:\t", size_to_human(maxsize_orig), "(", cuenta_maxsize_orig, ")"
-                print "\n"
+                print("\n")
+                print("Sesión:\t\t", sesion)
+                print("Descripción\t", descripcion)
+                print("Archivados:\t", narchivados)
+                print("Numero tars:\t", ntars)
+                print("Ficheros:\t", nficheros)
+                print("Tamaño Orig:\t", size_to_human(nsize_original))
+                print("Tamaño Arch:\t", size_to_human(nsize))
+                print("Tasa Compresion\t",'%.2f' % compresion,"%")
+                print("Tamaño/user\t",size_to_human(espaciobyusuario))
+                print("Max ficheros:\t", maxficheros, "(", cuenta_maxficheros, ")")
+                print("Max tamaño:\t", size_to_human(maxsize_orig), "(", cuenta_maxsize_orig, ")")
+                print("\n")
             cursor.close()
 
     @staticmethod
@@ -644,9 +650,9 @@ class Shell(cmd.Cmd):
                             )
             sesiones = cursor.fetchall()
             cursor.close()
-        except BaseException, error:
-            print "Error recuperando todas las sesiones"
-            print "ERROR: ", error
+        except BaseException as error:
+            print("Error recuperando todas las sesiones")
+            print("ERROR: ", error)
             cursor.close()
             return
 
@@ -656,7 +662,7 @@ class Shell(cmd.Cmd):
         for sesion in sesiones:
             #print sesion[0]," ",sesion[1]
             table.add_row([sesion[0],sesion[1],sesion[2],size_to_human(sesion[3]),sesion[4]])
-        print table.draw()
+        print(table.draw())
 
     def do_arcinfo(self,line):
         """
@@ -672,7 +678,7 @@ class Shell(cmd.Cmd):
         args,items = self.parse_with_args(line,['-s','-i'],LIST)
 
         if not items:
-            print "Se esperaba al menos un argumento"
+            print("Se esperaba al menos un argumento")
             return False
         user = items[0]
 
@@ -682,7 +688,7 @@ class Shell(cmd.Cmd):
             table.add_row(["IDSESION", "DSESION"])
             for row in rows:
                 table.add_row([row[0], row[1]])
-            print table.draw()
+            print(table.draw())
             return
 
 
@@ -702,14 +708,14 @@ class Shell(cmd.Cmd):
 
         if not '-s' in args:
             if not rows:
-                print "Usuario no archivado"
+                print("Usuario no archivado")
                 return False
             else:
                 table = Texttable()
                 table.add_row(["TARNAME", "SESION", "SIZE", "ORIGSIZE", "FILES"])
                 for row in rows:
                     table.add_row([os.path.basename(row[2]), row[0], size_to_human(row[3]), size_to_human(row[5]), row[6]])
-                print table.draw()
+                print(table.draw())
         else:
             return rows
 
@@ -733,12 +739,12 @@ class Shell(cmd.Cmd):
             col_names = []
             for i in range(0, len(cursor.description)):
                 col_names.append(cursor.description[i][0])
-        except BaseException, error:
-            print "ERROR: ", error
+        except BaseException as error:
+            print("ERROR: ", error)
             return
 
         if not rows:
-            print "No results"
+            print("No results")
         else:
             if '-l' not in args:
                 trows,tcols = os.popen('stty size','r').read().split()
@@ -749,7 +755,7 @@ class Shell(cmd.Cmd):
             table.header(col_names)
             # table.set_deco(Texttable.BORDER | Texttable.HLINES | Texttable.VLINES)
             table.add_rows(rows, header=False)
-            print table.draw()
+            print(table.draw())
 
     @staticmethod
     def do_trace(line):
@@ -759,13 +765,13 @@ class Shell(cmd.Cmd):
         """
 
         if line == "":
-            print config.TRACE
+            print(config.TRACE)
         else:
             try:
                 config.TRACE = ast.literal_eval(line)
-                print config.TRACE
+                print(config.TRACE)
             except BaseException:
-                print "Valor booleano incorrecto"
+                print("Valor booleano incorrecto")
 
     @staticmethod
     def do_debug(line):
@@ -775,13 +781,13 @@ class Shell(cmd.Cmd):
         """
 
         if line == "":
-            print config.DEBUG
+            print(config.DEBUG)
         else:
             try:
                 config.DEBUG = ast.literal_eval(line)
-                print config.DEBUG
+                print(config.DEBUG)
             except BaseException:
-                print "Valor booleano incorrecto"
+                print("Valor booleano incorrecto")
 
     @staticmethod
     def do_verbose(line):
@@ -791,13 +797,13 @@ class Shell(cmd.Cmd):
         """
 
         if line == "":
-            print config.VERBOSE
+            print(config.VERBOSE)
         else:
             try:
                 config.VERBOSE = ast.literal_eval(line)
-                print config.VERBOSE
+                print(config.VERBOSE)
             except BaseException:
-                print "Valor incorrecto"
+                print("Valor incorrecto")
 
     @staticmethod
     def do_ignorearchived(line):
@@ -806,18 +812,18 @@ class Shell(cmd.Cmd):
             ignorearchived <True/False>"""
 
         if line == "":
-            print config.IGNOREARCHIVED
+            print(config.IGNOREARCHIVED)
         else:
             try:
                 config.IGNOREARCHIVED = ast.literal_eval(line)
-                print config.IGNOREARCHIVED
+                print(config.IGNOREARCHIVED)
             except BaseException:
-                print "Valor booleano incorrecto"
+                print("Valor booleano incorrecto")
 
     @staticmethod
     def do_version(line):
         """Muestra la versión del programa"""
-        print config.__version__
+        print(config.__version__)
 
     def do_cuenta(self,line):
         """
@@ -864,7 +870,7 @@ class Shell(cmd.Cmd):
             f = open("/tmp/movidos", "w")
             fm = fs = f
 
-        for k, v in dictdir.iteritems():
+        for k, v in dictdir.items():
             if len(v) > 1:
                 _f = fm
             else:
@@ -928,44 +934,44 @@ class Shell(cmd.Cmd):
         for altdir in altdirs:
             #recupero la lista de usuarios
             userlist = os.listdir(parentdir + altdir)
-            print "ALTDIR: ",altdir," LALL: ",len(alluserlist)," LUSR: ",len(userlist)
+            print("ALTDIR: ",altdir," LALL: ",len(alluserlist)," LUSR: ",len(userlist))
             alluserlist = list(set(alluserlist) | set(userlist))
 
-        print "LEN ALLUSERLIST: ", len(alluserlist)
+        print("LEN ALLUSERLIST: ", len(alluserlist))
 
         for user in alluserlist:
             #Tiene cuenta en sigu o no?
             if not has_cuenta_sigu(user):
                 if has_cuenta_ldap(user):
                     nosigusildap = nosigusildap + 1
-                    print "NOSIGUSILDAP: ",user
+                    print("NOSIGUSILDAP: ",user)
                     fnosigusildap.write(user+"\n")
                     continue
                 else:
                     nosigunoldap = nosigunoldap + 1
                     fnosigunoldap.write(user+"\n")
-                    print "NOSIGUNOLDAP: ",user
+                    print("NOSIGUNOLDAP: ",user)
                     continue
             #Tiene cuenta en ldap o no?
             if not has_cuenta_ldap(user):
                 noldap = noldap + 1
                 fnoldap.write(user+"\n")
-                print "NOLDAP: ",user
+                print("NOLDAP: ",user)
                 continue
             #Fue archivado previamente?
             if is_archived(user) == True:
                 archived = archived + 1
                 farchivados.write(user+"\n")
-                print "ARCHIVED: ", user
+                print("ARCHIVED: ", user)
                 continue
             #Está expirado pero no se ha archivado?
             if is_expired(user):
                 expired = expired + 1
                 fexpirados.write(user+"\n")
-                print "EXPIRED: ",user
+                print("EXPIRED: ",user)
 
 
-        print "TOTAL: ",len(alluserlist)," NOSIGUNOLDAP: ",nosigunoldap,"NOSIGUSILDAP: ",nosigusildap," NOLDAP: ",noldap," ARCHIVADOS: ",archived," EXPIRADOS: ",expired
+        print("TOTAL: ",len(alluserlist)," NOSIGUNOLDAP: ",nosigunoldap,"NOSIGUSILDAP: ",nosigusildap," NOLDAP: ",noldap," ARCHIVADOS: ",archived," EXPIRADOS: ",expired)
 
         fnosigunoldap.close()
         fnosigusildap.close()
@@ -975,7 +981,7 @@ class Shell(cmd.Cmd):
 
     @staticmethod
     def do_quit(line):
-        print "Hasta luego Lucas ...."
+        print("Hasta luego Lucas ....")
         _ = line
         os._exit(True)
 
@@ -996,20 +1002,20 @@ class Shell(cmd.Cmd):
 
         if '-d' in args:
             config.FROMFILE = None
-            print "Quitado fichero fromfile"
+            print("Quitado fichero fromfile")
             return
 
         if not line:
             if config.FROMFILE:
-                print config.FROMFILE
+                print(config.FROMFILE)
             else:
-                print "Fromfile no estaba definido"
+                print("Fromfile no estaba definido")
             return
 
         if os.path.exists(line):
             config.FROMFILE = line
         else:
-            print "No existe el fichero ",line
+            print("No existe el fichero ",line)
 
     def do_tofile(self,line):
         """
@@ -1019,21 +1025,21 @@ class Shell(cmd.Cmd):
         """
         if not line:
             if config.TOFILE:
-                print config.TOFILE,
+                print(config.TOFILE, end=' ')
                 if config.TOFILEHANDLE:
-                    print " está abierto"
+                    print(" está abierto")
                 else:
-                    print "no está abierto"
+                    print("no está abierto")
                 return
             else:
-                print "No se ha especificado TOFILE"
+                print("No se ha especificado TOFILE")
                 return
 
         if not os.path.exists(line):
             config.TOFILE = line
             open_tofile()
         else:
-            print "Ya existe el fichero ",line
+            print("Ya existe el fichero ",line)
 
     def do_historia(self,line):
         """
@@ -1056,7 +1062,7 @@ class Shell(cmd.Cmd):
         config.WINDOWS_PASS = "dummy"
         check_environment()
 
-        print all_services_off(line)
+        print(all_services_off(line))
 
     def do_unarchive(self,line):
         """
@@ -1083,7 +1089,7 @@ class Shell(cmd.Cmd):
             delbbdd = True
 
         if len(items)<2:
-            print "Se esperaban dos argumentos"
+            print("Se esperaban dos argumentos")
             return False
         user = items[0]
         sesion = items[1]
@@ -1092,12 +1098,12 @@ class Shell(cmd.Cmd):
         rows = self.do_arcinfo(user + " " + sesion + " -s")
 
         if not rows:
-            print "No hay nada que desarchivar"
+            print("No hay nada que desarchivar")
             return
 
         #Mount points
         if config.MOUNT_EXCLUDE == "(?=a)b":
-            config.MOUNT_EXCLUDE = "/nfs/"
+            config.MOUNT_EXCLUDE = "/nfsro/"
         check_mounts()
 
         #Procesamos todos los archivados
@@ -1125,7 +1131,7 @@ class Shell(cmd.Cmd):
                     found = False
 
             if not found:
-                print "Fallo al encontrar el basedir de ",arcitems[2]
+                print("Fallo al encontrar el basedir de ",arcitems[2])
                 return
 
             if test:

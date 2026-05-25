@@ -1,7 +1,42 @@
-SiguClean
-=========
+SiguClean - Python 3.9 (Rocky Linux 9.3)
+=========================================
+
+**Estado: ✓ Migrado a Python 3.9 - Completamente funcional en Rocky Linux 9.3**
 
 SiguClean es una utilidad para archivar los espacios de almacenamiento asociados a una cuenta de usuario de sigu.
+
+Inicio Rápido
+-------------
+
+```bash
+# Verificar sistema
+python3 /opt/siguclean/verify_rocky.py
+
+# Ejecutar (opción más simple)
+bash /opt/siguclean/run_siguclean.sh tu_contraseña
+
+# O directamente
+python3 /opt/siguclean/siguclean.py -i --sigu-password tu_contraseña
+```
+
+Novedades en esta versión (Python 3.9)
+--------------------------------------
+
+* ✓ Migración completa de Python 2.7 a Python 3.9
+* ✓ Todas las dependencias actualizadas y verificadas
+* ✓ Oracle Client 8.3.0 instalado y funcional
+* ✓ Mejor manejo de errores en conexión Oracle
+* ✓ Scripts de diagnóstico y verificación incluidos
+* ✓ Documentación completa para Rocky Linux 9.3
+
+Documentación
+-------------
+
+- **[ESTADO.md](ESTADO.md)** - Estado completo del proyecto
+- **[CHECKLIST.md](CHECKLIST.md)** - Checklist de verificación
+- **[INSTALAR_RAPIDO.md](INSTALAR_RAPIDO.md)** - Guía rápida
+- **[ROCKY_LINUX_9_ORACLE.md](ROCKY_LINUX_9_ORACLE.md)** - Guía Rocky Linux
+- **[requirements.txt](requirements.txt)** - Dependencias Python
 
 Novedades 1.1.4
 ---------------

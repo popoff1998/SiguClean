@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
 Created on Mon May 20 09:09:42 2013
@@ -28,7 +28,7 @@ def current_parent():
     return inspect.stack()[2][3]
 
 def traceprint(current,parent):
-    print "TRACE: current: ",current," parent: ",parent
+    print("TRACE: current: ", current, " parent: ", parent)
 
 def fetch_single(cursor):
     if config.TRACE:
@@ -71,7 +71,7 @@ def confirm():
     if config.TRACE:
         traceprint(current_func(),current_parent())
 
-    a = raw_input("Desea continuar S/N (N)")
+    a = eval(input("Desea continuar S/N (N)"))
     if a == "S":
         return True
     else:
@@ -95,9 +95,9 @@ def _pprint(*_args):
 
     for arg in _args:
         if iterable(arg):
-            pprint(arg),
+            pprint(arg)
         else:
-            print(arg),
+            print(arg, end=' ')
 
 
 def check_environment():
@@ -162,7 +162,7 @@ def open_ldap(reconnect):
         config.ldapCon = ldap.initialize(config.LDAP_SERVER)
         config.ldapCon.simple_bind_s(config.BIND_DN, config.WINDOWS_PASS)
         config.status.ldapCon = True
-    except ldap.LDAPError, _e:
+    except ldap.LDAPError as _e:
         _print(1, "ERROR: ", verb, " conexión a ldap")
         _print(_e)
         config.status.ldapCon = False
@@ -204,9 +204,20 @@ def checkOracleConnection():
             config.oracleCon = cx_Oracle.connect('sigu/' + config.ORACLE_PASS + '@' + config.ORACLE_SERVER)
             config.status.oracleCon = True
             _print(1, "CORRECTO")
-        except cx_Oracle.DatabaseError:
+        except cx_Oracle.DatabaseError as e:
             _print(1, "ERROR")
+            _print(0, f"     ERROR de conexión Oracle: {str(e)}")
             config.status.oracleCon = False
+            config.oracleCon = None
+        except Exception as e:
+            _print(1, "ERROR")
+            _print(0, f"     ERROR inesperado en Oracle: {str(e)}")
+            config.status.oracleCon = False
+            config.oracleCon = None
+    else:
+        _print(1, "     Saltando conexión a Oracle (credencial dummy)")
+        config.oracleCon = None
+        config.status.oracleCon = False
 
 def get_mount_point(algo, exclude_regex):
     """Devuelve el punto de montaje que contiene algo en el export"""
@@ -288,7 +299,7 @@ def input_parameter(param, text, mandatory):
 
     while True:
         prevparam = param
-        param = raw_input(text + '[' + param + ']: ')
+        param = eval(input(text + '[' + param + ']: '))
         if param == '':
             param = prevparam
         if param == 'c':
@@ -305,16 +316,16 @@ def enter_parameters():
         traceprint(current_func(),current_parent())
 
     while True:
-        print "PASO2: Parametros de la sesion ('c' para borrar)"
+        print("PASO2: Parametros de la sesion ('c' para borrar)")
         config.sessionId = input_parameter(config.sessionId, "Identificador de sesion: ", True)
         config.fromDate = input_parameter(config.fromDate, "Fecha desde (yyyy-mm-dd): ", False)
         config.toDate = input_parameter(config.toDate, "Fecha hasta (yyyy-mm-dd): ", True)
 
-        print '\nSessionId = [' + config.sessionId + ']'
-        print 'fromDate = [' + config.fromDate + ']'
-        print 'toDate = [' + config.toDate + ']'
+        print(('\nSessionId = [' + config.sessionId + ']'))
+        print(('fromDate = [' + config.fromDate + ']'))
+        print(('toDate = [' + config.toDate + ']'))
 
-        sal = raw_input('\nSon Correctos (S/n): ')
+        sal = eval(input('\nSon Correctos (S/n): '))
         if sal == 'S':
             return
         else:
@@ -330,7 +341,7 @@ def pager(_iterable, page_size):
 
     _args = [iter(_iterable)] * page_size
     fill_value = object()
-    for group in itertools.izip_longest(fillvalue=fill_value, *_args):
+    for group in itertools.zip_longest(fillvalue=fill_value, *_args):
         yield (elem for elem in group if elem is not fill_value)
 
 
@@ -343,7 +354,7 @@ def imprime(user_list):
     for page in my_pager:
         for i in page:
             _print(1, i)
-        tecla = raw_input("----- Pulse intro para continuar (q para salir) ----------")
+        tecla = eval(input("----- Pulse intro para continuar (q para salir) ----------"))
         if tecla == 'q':
             break
 
@@ -404,7 +415,7 @@ def _print(level, *_args, **kwargs):
         trail = '\n'
     cadena = "".join(str(x) for x in _args)
     if config.VERBOSE >= level:
-        print cadena + trail,
+        print(cadena + trail, end=' ')
 
     if config.session:
         if hasattr(config.session, 'log'):
@@ -417,7 +428,7 @@ def debug(*_args, **kwargs):
 
     # Si tenemos verbose o no tenemos sesion sacamos la info por consola tambien
     if config.VERBOSE > 0 or not config.session:
-        print "".join(str(x) for x in _args)
+        print("".join(str(x) for x in _args))
     # Si tenemos definido el log de la sesion lo grabamos en el fichero, en caso
     # contrario solo salen por pantalla
     # En sesiones restore no abrimos el fichero
@@ -490,8 +501,8 @@ def ldap_from_sigu(cuenta, attr):
         cursor = bbdd_execute(q_ldap_sigu)
         tmp_list = cursor.fetchall()
         cursor.close()
-    except BaseException, error:
-        print "ERROR: en ldap_from_sigu (1)"
+    except BaseException as error:
+        print("ERROR: en ldap_from_sigu (1)")
         raise Exception("Retry")
         return False
     tmp_list = tmp_list[0][0]
@@ -506,8 +517,8 @@ def ldap_from_sigu(cuenta, attr):
         cursor = bbdd_execute(q_ldap_sigu)
         tmp_list = cursor.fetchall()
         cursor.close()
-    except BaseException, error:
-        print "ERROR: en ldap_from_sigu (2)"
+    except BaseException as error:
+        print("ERROR: en ldap_from_sigu (2)")
         raise Exception("Retry")
         return False
     tmp_list = tmp_list[0][0]
@@ -596,7 +607,7 @@ def check_services(user_list):
                 _print(1, "INFO: Usuario ", user, " no tiene todos los servicios en OFF")
             elif ret is not True:
                 _print(1, "INFO: Usuario ", user, " tiene menos servicios de los esperados a OFF")
-        except BaseException, error:
+        except BaseException as error:
             _print(0, "ERROR: Error desconocido consultando servicios del usuario ", user)
             _print(0, "ERRORCODE: ", error)
 
@@ -619,7 +630,7 @@ def get_list_by_date(to_date, from_date='1900-01-01'):
         cursor = bbdd_execute(query)
         tmp_list = cursor.fetchall()
         cursor.close()
-    except BaseException, error:
+    except BaseException as error:
         _print(0, "ERROR: Error recuperando la lista de usuarios")
         if config.DEBUG:
             debug("DEBUG-ERROR: (get_list_by_date): ", error)
@@ -645,7 +656,7 @@ def get_archived_by_date(to_date, from_date='1900-01-01'):
         cursor = bbdd_execute(query)
         tmp_list = cursor.fetchall()
         cursor.close()
-    except BaseException, error:
+    except BaseException as error:
         _print(0, "ERROR: Error recuperando la lista de usuarios archivados")
         if config.DEBUG:
             debug("DEBUG-ERROR: (get_list_by_date): ", error)
@@ -670,7 +681,7 @@ def get_unarchived_by_date(to_date, from_date='1900-01-01'):
         cursor = bbdd_execute(query)
         tmp_list = cursor.fetchall()
         cursor.close()
-    except BaseException, error:
+    except BaseException as error:
         _print(0, "ERROR: Error recuperando la lista de usuarios no archivados")
         if config.DEBUG:
             debug("DEBUG-ERROR: (get_list_by_date): ", error)
@@ -713,7 +724,7 @@ def is_archived(user):
                 return ret[1]
             # Si estamos aquí la salida es 1 o 2 y no esta archivado por tanto
             return False
-    except BaseException, error:
+    except BaseException as error:
         if config.DEBUG:
             debug("DEBUG-ERROR: (is_archived) ", error)
         return None
@@ -728,7 +739,7 @@ def is_expired(user):
         cursor = bbdd_execute("select CESTADO from ut_cuentas where CCUENTA = " + comillas(user))
         ret = fetch_single(cursor)
         cursor.close()
-    except BaseException, error:
+    except BaseException as error:
         _print(0, "ERROR: Consultando estado archivable del usuario ", user)
         _print(0, "ERROR-CODE: ", error)
         return None
@@ -863,7 +874,7 @@ def from_file(user_list):
                 if config.EXTRADEBUG:
                     debug("EXTRADEBUG-INFO: Lista filtrada: ", user_list)
             return True
-        except BaseException, error:
+        except BaseException as error:
             if config.DEBUG:
                 debug("Error leyendo FROMFILE: ", error)
             _print(0, "Error leyendo FROMFILE: ", config.FROMFILE)
@@ -898,7 +909,7 @@ def display_table(header,lista):
     # table.set_deco(Texttable.BORDER | Texttable.HLINES | Texttable.VLINES)
     table.add_rows(lista, header=False)
 
-    print table.draw()
+    print(table.draw())
 
 
 # CLASES
@@ -978,9 +989,9 @@ def open_tofile():
     try:
         config.TOFILEHANDLE = open(config.TOFILE, 'w')
         return True
-    except BaseException,error:
-        print "Error abriendo tofile en ",config.TOFILE
-        print "ERROR: ",error
+    except BaseException as error:
+        print(("Error abriendo tofile en ", config.TOFILE))
+        print(("ERROR: ", error))
         return False
 
 def write_tofile(line):
@@ -991,9 +1002,9 @@ def write_tofile(line):
         config.TOFILEHANDLE.writelines(line+"\n")
         config.TOFILEHANDLE.flush()
         return True
-    except BaseException,error:
-        print "Error escribiendo en ",config.TOFILE
-        print "ERROR: ",error
+    except BaseException as error:
+        print(("Error escribiendo en ", config.TOFILE))
+        print(("ERROR: ", error))
         return False
 
 def close_tofile():
@@ -1004,9 +1015,9 @@ def close_tofile():
         config.TOFILEHANDLE.close()
         config.TOFILEHANDLE = None
         return True
-    except BaseException,error:
-        print "Error cerrando ",config.TOFILE
-        print "ERROR: ",error
+    except BaseException as error:
+        print(("Error cerrando ", config.TOFILE))
+        print(("ERROR: ", error))
         return False
 
 def parse_arctar(tarname):
@@ -1035,8 +1046,9 @@ def unarchive_tar(tarname,destdir,force):
     if not os.path.isdir(destdir):
         try:
             os.makedirs(destdir)
-        except BaseException, error:
+        except BaseException as error:
             _print(0,"Error creando directorio destino para unarchive")
+            _print(0,"ERROR: ", error)
             return False
     elif not force:
             _print(0,"Existe el directorio ",destdir," y no especificó -f")
@@ -1044,11 +1056,14 @@ def unarchive_tar(tarname,destdir,force):
 
     _print(0, "Desarchivando ", tarname, " to ", destdir)
     try:
-        tar = tarfile.open(tarname, "r:*")
-        tar.extractall(destdir)
-        tar.close()
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            tar = tarfile.open(tarname, "r:*")
+            tar.extractall(destdir)
+            tar.close()
         return True
-    except BaseException,error:
+    except BaseException as error:
         _print(0, "Error extrayendo tar de ", tarname, " a ", destdir)
         _print(0,"ERROR: ", error)
         return False
@@ -1065,7 +1080,7 @@ def delete_bbdd_storage(idsesion, ccuenta, ttar):
         cursor.close()
         _print(0,"Borrado en la bbdd el storage de ",ccuenta)
         return True
-    except BaseException, error:
+    except BaseException as error:
         _print(0,"Error al borrar en la bbdd el storage de ",ccuenta)
         _print(0,"QUERY: ",query)
         _print(0,"ERROR: ",error)

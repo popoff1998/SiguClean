@@ -1,0 +1,175 @@
+---
+# Playbook de Ansible para instalar y configurar siguclean
+# Incluye: dependencias del sistema, Oracle Client, librerías Python, y montajes NFS
+
+- name: Preparar servidor para siguclean
+  hosts: siguclean_servers
+  become: true
+  
+  tasks:
+    # ============================================================
+    # Instalación de dependencias del sistema operativo
+    # ============================================================
+    
+    - name: Instalar libaio (requerido para Oracle Client)
+      package:
+        name: libaio
+        state: present
+    
+    - name: Instalar OpenLDAP y SASL (para python-ldap) - RedHat/CentOS
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - openldap-devel
+        - cyrus-sasl-devel
+      when: ansible_os_family == "RedHat"
+    
+    - name: Instalar OpenLDAP y SASL (para python-ldap) - Ubuntu/Debian
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - libldap2-dev
+        - libsasl2-dev
+      when: ansible_os_family == "Debian"
+    
+    # ============================================================
+    # Instalación de Oracle Instant Client
+    # ============================================================
+    
+    - name: Crear directorio /opt/oracle
+      file:
+        path: /opt/oracle
+        state: directory
+        mode: '0755'
+    
+    - name: Instalar Oracle Instant Client desde RPM
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - /opt/siguclean/oracle-instantclient19.29-basic-19.29.0.0.0-1.x86_64.rpm
+      ignore_errors: true
+      register: oracle_rpm_install
+    
+    - name: Crear enlace simbólico para libclntsh.so (si se instaló desde RPM)
+      file:
+        src: /usr/lib/oracle/19.29/client64/lib/libclntsh.so.19.1
+        dest: /usr/lib/oracle/19.29/client64/lib/libclntsh.so
+        state: link
+      when: oracle_rpm_install is succeeded
+    
+    - name: Configurar LD_LIBRARY_PATH para Oracle (si se instaló desde RPM)
+      copy:
+        content: "/usr/lib/oracle/19.29/client64/lib"
+        dest: /etc/ld.so.conf.d/oracle.conf
+      when: oracle_rpm_install is succeeded
+      notify: Update ldconfig
+    
+    - name: Extraer Oracle Instant Client desde ZIP (si no se instaló desde RPM)
+      unarchive:
+        src: instantclient-basiclite-linux.x86_64-19.29.0.0.0.zip
+        dest: /opt/oracle
+        remote_src: false
+      when: oracle_rpm_install is failed
+      ignore_errors: true
+      register: oracle_zip_install
+    
+    - name: Crear enlace simbólico para libclntsh.so (si se instaló desde ZIP)
+      file:
+        src: /opt/oracle/instantclient_19_29/libclntsh.so.19.1
+        dest: /opt/oracle/instantclient_19_29/libclntsh.so
+        state: link
+      when: oracle_zip_install is succeeded
+    
+    - name: Configurar LD_LIBRARY_PATH para Oracle (si se instaló desde ZIP)
+      copy:
+        content: "/opt/oracle/instantclient_19_29"
+        dest: /etc/ld.so.conf.d/oracle.conf
+      when: oracle_zip_install is succeeded
+      notify: Update ldconfig
+    
+    # ============================================================
+    # Instalación de dependencias Python
+    # ============================================================
+    
+    - name: Actualizar pip
+      pip:
+        name:
+          - pip
+          - setuptools
+          - wheel
+        state: latest
+        executable: pip3
+    
+    - name: Instalar dependencias Python desde requirements.txt
+      pip:
+        requirements: /opt/siguclean/requirements.txt
+        executable: pip3
+    
+    # ============================================================
+    # Configuración de montajes NFS
+    # ============================================================
+    
+    - name: Asegurar que /nfs está montado en read-write
+      mount:
+        path: /nfs
+        fstype: nfs
+        opts: "rw,hard,intr,timeo=600,retrans=3"
+        state: present
+      ignore_errors: true
+    
+    - name: Remontear /nfs en modo read-write si está read-only
+      shell: mount -o remount,rw /nfs
+      ignore_errors: true
+    
+    - name: Verificar y crear subdirectorios NFS
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - /nfs/HOMESNFS
+        - /nfs/UNITYMAIL
+        - /nfs/PERFILESCIFV1
+        - /nfs/PERFILESCIFV2
+        - /nfs/PERFILESCIFV5
+        - /nfs/HOMESCIF
+        - /nfs/SIGUCLEAN
+      ignore_errors: true
+    
+    # ============================================================
+    # Verificación final
+    # ============================================================
+    
+    - name: Verificar instalación de Python
+      command: python3 --version
+      register: python_version
+    
+    - name: Mostrar versión de Python
+      debug:
+        msg: "Python version: {{ python_version.stdout }}"
+    
+    - name: Verificar importación de dependencias Python
+      command: python3 -c "import dateutil; import tenacity; import cx_Oracle; import ldap"
+      ignore_errors: true
+      register: python_imports
+    
+    - name: Resultado de verificación
+      debug:
+        msg: "Dependencias Python instaladas correctamente"
+      when: python_imports is succeeded
+    
+    - name: Advertencia sobre dependencias Python
+      debug:
+        msg: "Algunas dependencias Python pueden no estar disponibles (revisar log)"
+      when: python_imports is failed
+  
+  # ============================================================
+  # Handlers
+  # ============================================================
+  
+  handlers:
+    - name: Update ldconfig
+      shell: /sbin/ldconfig

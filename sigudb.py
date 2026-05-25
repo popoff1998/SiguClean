@@ -21,7 +21,7 @@ def getListByDate(toDate , fromDate='1900-01-01'):
                        '\',\'yyyy-mm-dd\') AND to_date(\''+ toDate +\
                        '\',\'yyyy-mm-dd\')'
     query = Q_GET_BORRABLES + ' AND ' + Q_BETWEEN_DATES
-    if DEBUG: print "get_list_by_date Query:",query
+    if DEBUG: print("get_list_by_date Query:",query)
     cursor.execute(query)     
     userList = cursor.fetchall()
     return userList
@@ -30,22 +30,22 @@ def testPyad():
     rows = getListByDate('2008-02-01')
     for usuario in rows:
         user = pyad.from_cn(usuario)
-        print type(user)
-        print user
-        raw_input("Pulse para continuar ...")
-    print len(rows)    
+        print(type(user))
+        print(user)
+        eval(input("Pulse para continuar ..."))
+    print((len(rows)))    
     
 
 try:
    ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, 0)
    lcon = ldap.initialize(LDAP_SERVER)
    lcon.simple_bind_s(BIND_DN, BIND_PASS)
-except ldap.LDAPError, e:
-   print e
+except ldap.LDAPError as e:
+   print(e)
 
 user = lcon.search_s(USER_BASE,ldap.SCOPE_SUBTREE,"cn=i02s*")
 
 for dn,entry in user:
-        print 'Processing',repr(dn)
-        print entry
+        print('Processing',repr(dn))
+        print(entry)
         #handle_ldap_entry(entry)

@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
 Created on Mon May 20 09:09:42 2013
@@ -21,7 +21,7 @@ class Log(object):
         else:
             session.logsdir = session.tardir + "/logs"
         if not os.path.exists(session.logsdir):
-            os.mkdir(session.logsdir, 0777)
+            os.mkdir(session.logsdir, 0o777)
         else:
             # Tenemos que tener en cuenta de si es una sesion restore
             # caso de no serla rotamos el log.
@@ -29,7 +29,7 @@ class Log(object):
             if not config.RESTORE:
                 new_name = unique_name(session.logsdir)
                 os.rename(session.logsdir, new_name)
-                os.mkdir(session.logsdir, 0777)
+                os.mkdir(session.logsdir, 0o777)
         # Si es restore salimos sin crear fichero ninguno
         if config.RESTORE:
             return
@@ -122,11 +122,11 @@ class Log(object):
         try:
             self.fBbddLog.write(string + "\n")
             self.fBbddLog.flush()
-        except IOError, error:
+        except IOError as error:
             _print(0, "ERROR: (write_bbdd)", "I/O Error({0}) : {1}".format(error.errno, error.strerror))
-        except ValueError, error:
+        except ValueError as error:
             _print(0, "ERROR: (write_bbdd)", "Error de valor: ", error)
-        except AttributeError, error:
+        except AttributeError as error:
             _print(0, "ERROR: (write_bbdd)", "Error de atributo: ", error)
 
     @staticmethod
